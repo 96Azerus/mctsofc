@@ -1,6 +1,7 @@
 # main.py
 import time
 import random
+from typing import List, Set, Optional, Tuple, Any
 from card import card_from_str, card_to_str, Card
 from game_state import GameState
 from mcts_agent import MCTSAgent
