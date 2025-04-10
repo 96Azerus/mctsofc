@@ -1,6 +1,7 @@
 # mcts_node.py
 import math
 import random
+import traceback # Для отладки ошибок
 from typing import Optional, Dict, Any, List, Tuple, Set
 from game_state import GameState # Импортируем GameState
 from card import Card, card_to_str # Добавлен card_to_str
@@ -32,21 +33,32 @@ class MCTSNode:
          gs = self.game_state
          player_to_move = -1
          if gs.is_fantasyland_round:
+              # В ФЛ раунде ищем первого игрока (ФЛ или не-ФЛ), который не закончил и может ходить
               for i in range(gs.NUM_PLAYERS):
-                   if gs.fantasyland_status[i] and not gs._player_finished_round[i]:
-                        player_to_move = i; break
-              if player_to_move == -1:
-                   for i in range(gs.NUM_PLAYERS):
-                        if not gs.fantasyland_status[i] and not gs._player_finished_round[i] and gs.current_hands.get(i):
-                             player_to_move = i; break
-              if player_to_move == -1: player_to_move = gs.current_player_idx # Фоллбэк
-         else:
+                   if not gs._player_finished_round[i]:
+                        if gs.fantasyland_status[i]: # Игрок в ФЛ
+                             if gs.fantasyland_hands[i] is not None: # Если рука ФЛ еще не разыграна
+                                  player_to_move = i; break
+                        else: # Обычный игрок в ФЛ раунде
+                             if gs.current_hands.get(i) is not None: # Если есть карты для хода
+                                  player_to_move = i; break
+              # Если не нашли активного, возможно, все ждут карт (или раунд закончился)
+              if player_to_move == -1 and not gs.is_round_over():
+                   # Фоллбэк на current_player_idx, если он валиден
+                   if gs.current_player_idx != -1 and not gs._player_finished_round[gs.current_player_idx]:
+                        player_to_move = gs.current_player_idx
+                   else: # Пытаемся найти хоть кого-то, кто не закончил
+                        for i in range(gs.NUM_PLAYERS):
+                             if not gs._player_finished_round[i]:
+                                  player_to_move = i; break
+
+         else: # Обычный раунд
               player_to_move = gs.current_player_idx
 
-         # Если все еще -1, возможно раунд закончен или ошибка
+         # Если все еще -1, значит раунд закончен
          if player_to_move == -1 and not gs.is_round_over():
-              print(f"Warning: _get_player_to_move returned -1 for non-terminal state.")
-              # Возвращаем 0 по умолчанию в случае ошибки
+              # print(f"Warning: _get_player_to_move returned -1 for non-terminal state.")
+              # Возвращаем 0 по умолчанию в случае непредвиденной ошибки
               return 0
          elif gs.is_round_over():
               return -1 # Нет ходящего в терминальном состоянии
@@ -79,18 +91,17 @@ class MCTSNode:
 
         # --- Применяем действие ---
         next_state = None
-        # ФЛ ход не должен обрабатываться через expand, т.к. он детерминирован солвером
+        # ФЛ ход не должен обрабатываться через expand
         if self.game_state.is_fantasyland_round and self.game_state.fantasyland_status[player_to_move]:
              print(f"Warning: expand called for Fantasyland player {player_to_move}. This should not happen.")
              return None
         else:
              # Обычное действие
              try:
-                  # Применяем действие для игрока player_to_move
                   next_state = self.game_state.apply_action(player_to_move, action)
              except Exception as e:
                   print(f"Error applying action during expand for player {player_to_move}: {e}")
-                  # print(f"Action: {action}") # Отладка действия
+                  traceback.print_exc() # Печатаем traceback
                   return None
 
         if next_state is None: return None
@@ -126,13 +137,13 @@ class MCTSNode:
             gs_rollout = current_rollout_state
             if gs_rollout.is_fantasyland_round:
                  for i in range(gs_rollout.NUM_PLAYERS):
-                      if gs_rollout.fantasyland_status[i] and not gs_rollout._player_finished_round[i]:
-                           player_to_act_rollout = i; break
-                 if player_to_act_rollout == -1:
-                      for i in range(gs_rollout.NUM_PLAYERS):
-                           if not gs_rollout.fantasyland_status[i] and not gs_rollout._player_finished_round[i] and gs_rollout.current_hands.get(i):
+                      if not gs_rollout._player_finished_round[i]:
+                           if gs_rollout.fantasyland_status[i] and gs_rollout.fantasyland_hands[i] is not None:
                                 player_to_act_rollout = i; break
-                 if player_to_act_rollout == -1: player_to_act_rollout = gs_rollout.current_player_idx
+                           elif not gs_rollout.fantasyland_status[i] and gs_rollout.current_hands.get(i) is not None:
+                                player_to_act_rollout = i; break
+                 if player_to_act_rollout == -1 and not gs_rollout.is_round_over(): # Если активных не нашли, но раунд не кончился
+                      player_to_act_rollout = gs_rollout.current_player_idx # Фоллбэк
             else:
                  player_to_act_rollout = gs_rollout.current_player_idx
 
@@ -201,23 +212,26 @@ class MCTSNode:
 
                  # Раздача карт (если нужно)
                  if needs_dealing or current_rollout_state.is_fantasyland_round:
-                      player_to_deal = -1
+                      players_to_deal = []
                       if needs_dealing and not current_rollout_state.is_fantasyland_round:
                            # Раздаем тому, чья очередь, если у него нет карт
                            p_idx = current_rollout_state.current_player_idx
                            if not current_rollout_state._player_finished_round[p_idx] and current_rollout_state.current_hands.get(p_idx) is None:
-                                player_to_deal = p_idx
+                                players_to_deal.append(p_idx)
                       elif current_rollout_state.is_fantasyland_round:
-                           # Ищем не-ФЛ игрока без карт, который не закончил
+                           # Ищем не-ФЛ игроков без карт, который не закончил
                            for p_idx_deal in range(current_rollout_state.NUM_PLAYERS):
                                 if not current_rollout_state.fantasyland_status[p_idx_deal] and \
                                    not current_rollout_state._player_finished_round[p_idx_deal] and \
                                    current_rollout_state.current_hands.get(p_idx_deal) is None:
-                                        player_to_deal = p_idx_deal
-                                        break
-                      # Раздаем, если нашли кому
-                      if player_to_deal != -1:
-                           current_rollout_state._deal_street_to_player(player_to_deal)
+                                        players_to_deal.append(p_idx_deal)
+                                        # Раздаем только одному за итерацию? Или всем, кто ждет?
+                                        # Пока раздаем всем, кто ждет
+                                        # break
+
+                      # Раздаем карты
+                      for p_idx_deal in players_to_deal:
+                           current_rollout_state._deal_street_to_player(p_idx_deal)
 
 
             # Если за итерацию не было сделано ни одного хода и раунд не закончен
@@ -238,7 +252,6 @@ class MCTSNode:
         elif perspective_player == 1:
             return float(-final_score_p0), simulation_actions_set
         else:
-            # Если perspective_player не 0 или 1, возвращаем 0
             return 0.0, simulation_actions_set
 
     def _heuristic_rollout_policy(self, state: GameState, player_idx: int, actions: List[Any]) -> Optional[Any]:
@@ -322,7 +335,7 @@ class MCTSNode:
                 suits = {c.int_suit for c in current_row_cards}
                 ranks = sorted([c.int_rank for c in current_row_cards])
                 if len(suits) == 1 and len(current_row_cards) >= 3: b += len(current_row_cards)
-                # ... (проверка стрита) ...
+                # ... (упрощенная проверка стрита как раньше) ...
 
                 if row == 'top':
                      if card.int_rank >= 12: b += 10
@@ -365,6 +378,10 @@ class MCTSNode:
         n_discard = n_cards - n_place
 
         try:
+             # Добавим проверку на None перед сортировкой
+             if any(c is None for c in hand):
+                  print(f"Error: None found in FL hand during heuristic: {[str(c) for c in hand]}")
+                  return None, None
              sorted_hand = sorted(hand, key=lambda c: c.int_rank)
         except AttributeError as e:
              print(f"Error sorting FL hand in heuristic: {e}. Hand: {[str(c) for c in hand]}")
@@ -379,11 +396,15 @@ class MCTSNode:
         if not placement:
               discard_combinations = list(combinations(hand, n_discard))
               if discard_combinations:
-                   discarded_list_alt = list(random.choice(discard_combinations))
-                   remaining_alt = [c for c in hand if c not in discarded_list_alt]
-                   if len(remaining_alt) == 13:
-                        placement = solver._try_maximize_royalty_heuristic(remaining_alt)
-                        if placement: discarded_list = discarded_list_alt
+                   # Пробуем несколько случайных сбросов
+                   for _ in range(min(5, len(discard_combinations))): # Пробуем до 5 случайных
+                        discarded_list_alt = list(random.choice(discard_combinations))
+                        remaining_alt = [c for c in hand if c not in discarded_list_alt]
+                        if len(remaining_alt) == 13:
+                             placement = solver._try_maximize_royalty_heuristic(remaining_alt)
+                             if placement:
+                                  discarded_list = discarded_list_alt
+                                  break # Нашли рабочий вариант
 
         return placement, discarded_list if placement else None
 
@@ -423,9 +444,8 @@ class MCTSNode:
 
         parent_visits = self.visits if self.visits > 0 else 1
 
-        # Используем items() для итерации по действиям и дочерним узлам
         children_items = list(self.children.items())
-        if not children_items: return None # Нет детей для выбора
+        if not children_items: return None
 
         for action, child in children_items:
             child_visits = child.visits
@@ -435,8 +455,7 @@ class MCTSNode:
             if child_visits == 0:
                 if rave_visits > 0 and rave_k > 0:
                     rave_q = self.get_rave_q_value(action, current_player_perspective)
-                    # Добавляем exploration к RAVE для FPU
-                    score = rave_q + exploration_constant * math.sqrt(math.log(parent_visits + 1e-6) / (rave_visits + 1e-6)) # Добавим epsilon
+                    score = rave_q + exploration_constant * math.sqrt(math.log(parent_visits + 1e-6) / (rave_visits + 1e-6))
                 else:
                     score = float('inf') # FPU
             else:
@@ -459,10 +478,8 @@ class MCTSNode:
                  if random.choice([True, False]):
                       best_child = child
 
-        # Если best_child все еще None (например, все дети имели -inf), выбираем случайного
         if best_child is None and children_items:
              best_child = random.choice([child for _, child in children_items])
-
 
         return best_child
 
