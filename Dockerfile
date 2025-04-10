@@ -8,8 +8,6 @@ WORKDIR /app
 COPY requirements.txt requirements.txt
 
 # Устанавливаем зависимости
-# --no-cache-dir чтобы не хранить кэш pip и уменьшить размер образа
-# --upgrade pip чтобы убедиться, что используется последняя версия pip
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -20,17 +18,13 @@ COPY . .
 ENV FLASK_APP=app.py
 # Устанавливаем переменную окружения для секретного ключа (лучше переопределить при запуске)
 ENV FLASK_SECRET_KEY='default_secret_key_change_me'
-# Указываем порт, который будет слушать Gunicorn (Render ожидает $PORT или 10000)
+# Указываем порт по умолчанию, если $PORT не установлен (хотя Render его установит)
 ENV PORT=8080
 
-# Открываем порт, на котором будет работать Gunicorn
-EXPOSE ${PORT}
+# Открываем порт, который будет слушать Gunicorn (Render использует переменную $PORT)
+# EXPOSE директива больше для документации, Gunicorn будет слушать порт из CMD
+# EXPOSE ${PORT} # Можно оставить или убрать
 
-# Команда для запуска приложения с использованием Gunicorn
-# bind 0.0.0.0 чтобы приложение было доступно извне контейнера
-# workers = 3 - хорошее начало, можно настроить
-# Используем переменную окружения PORT
-CMD ["gunicorn", "--bind", "0.0.0.0:${PORT}", "app:app"]
-
-# Альтернативная команда для запуска с Flask development server (для отладки)
-# CMD ["flask", "run", "--host=0.0.0.0", "--port=8080"]
+# Команда для запуска приложения с использованием Gunicorn (shell form)
+# Оболочка подставит значение переменной $PORT
+CMD gunicorn --bind 0.0.0.0:$PORT app:app
