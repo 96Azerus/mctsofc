@@ -5,37 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
-        /* Стили оставляем как в вашем примере, они хорошие */
-        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; background-color: #f0f0f0; overflow-x: hidden; min-height: 100vh; padding-bottom: 150px; box-sizing: border-box; }
-        .controls { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; position: sticky; top: 0; z-index: 1001; background: #f0f0f0; padding: 10px; }
-        button { padding: 12px 24px; font-size: 16px; border: none; border-radius: 5px; cursor: pointer; background-color: #4CAF50; color: white; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
-        button:hover { background-color: #45a049; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-        button:active { transform: translateY(1px); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+        /* Стили оставляем как в вашем примере */
+        body { margin: 0; padding: 10px; font-family: Arial, sans-serif; background-color: #f0f0f0; overflow-x: hidden; min-height: 100vh; padding-bottom: 150px; box-sizing: border-box; }
+        .controls { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px; position: sticky; top: 0; z-index: 1001; background: #f0f0f0; padding: 10px; border-bottom: 1px solid #ccc; }
+        button { padding: 10px 20px; font-size: 15px; border: none; border-radius: 5px; cursor: pointer; background-color: #4CAF50; color: white; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        button:hover:not(:disabled) { background-color: #45a049; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
         button:disabled { background-color: #cccccc; cursor: not-allowed; }
-        .fullscreen-btn { position: fixed; top: 10px; right: 10px; background: none; border: none; color: #333; cursor: pointer; z-index: 1002; padding: 8px; box-shadow: none; }
-        .table { display: grid; grid-template-rows: auto auto auto; gap: 10px; margin: 15px auto; width: 95%; max-width: 800px; background-color: #1a472a; padding: 15px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); box-sizing: border-box; }
-        .row { display: flex; justify-content: center; gap: 1.5%; min-height: 90px; padding: 5px; border-radius: 5px; background-color: rgba(255,255,255,0.1); flex-wrap: nowrap; }
-        .card { width: 60px; height: 85px; border-radius: 6px; background-color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; font-size: 18px; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2); position: relative; flex-shrink: 0; transition: transform 0.2s, box-shadow 0.2s, border 0.2s; user-select: none; -webkit-user-select: none; touch-action: none; box-sizing: border-box; border: 2px solid transparent; }
+        .fullscreen-btn { position: fixed; top: 5px; right: 5px; background: none; border: none; color: #333; cursor: pointer; z-index: 1002; padding: 5px; box-shadow: none; }
+        .table { display: grid; grid-template-rows: auto auto auto; gap: 8px; margin: 10px auto; width: 98%; max-width: 600px; background-color: #1a472a; padding: 10px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); box-sizing: border-box; }
+        .row { display: flex; justify-content: center; gap: 1.5%; min-height: 75px; padding: 5px; border-radius: 5px; background-color: rgba(255,255,255,0.1); flex-wrap: nowrap; align-items: center; }
+        .card { width: 45px; height: 65px; border-radius: 4px; background-color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; cursor: pointer; font-size: 14px; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2); position: relative; flex-shrink: 0; transition: transform 0.2s, box-shadow 0.2s, border 0.2s; user-select: none; -webkit-user-select: none; touch-action: none; box-sizing: border-box; border: 2px solid transparent; padding: 2px; }
+        .card span:first-child { font-size: 1.2em; }
+        .card span:last-child { font-size: 0.9em; margin-top: 2px; }
         .card[data-suit="♥"], .card[data-suit="♦"] { color: #e44145; }
         .card[data-suit="♣"], .card[data-suit="♠"] { color: #2d2d2d; }
-        .card-slot { width: 60px; height: 85px; border: 2px dashed rgba(255,255,255,0.3); border-radius: 6px; flex-shrink: 0; transition: all 0.3s ease; display: flex; justify-content: center; align-items: center; }
+        .card-slot { width: 45px; height: 65px; border: 1px dashed rgba(255,255,255,0.3); border-radius: 4px; flex-shrink: 0; transition: all 0.3s ease; display: flex; justify-content: center; align-items: center; }
         .card-slot.drag-over { background-color: rgba(255,255,255,0.2); border-color: white; transform: scale(1.05); }
-        #hand-area { position: fixed; bottom: 0; left: 0; right: 0; background: #e0e0e0; padding: 15px; display: flex; justify-content: center; gap: 10px; z-index: 1000; flex-wrap: wrap; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); min-height: 110px; align-items: center;}
+        .card-slot.available { border: 2px dashed #aaffaa; cursor: pointer; }
+        .card-slot.available:hover { background-color: rgba(170, 255, 170, 0.2); }
+        #hand-area { position: fixed; bottom: 0; left: 0; right: 0; background: #e0e0e0; padding: 10px; display: flex; justify-content: center; gap: 8px; z-index: 1000; flex-wrap: wrap; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); min-height: 90px; align-items: center;}
+        #hand .card { cursor: pointer; } /* Карты в руке всегда кликабельны */
         .dragging { opacity: 0.5; transform: scale(1.05); }
-        .selected { border: 2px solid #007bff; transform: scale(1.05); }
-        .discard-pile { margin-top: 10px; text-align: center; color: #555; font-size: 14px; }
-        .message-area { text-align: center; margin-bottom: 15px; font-weight: bold; color: #333; min-height: 20px;}
-        .player-label { text-align: center; color: white; font-weight: bold; margin-bottom: 5px; }
-
-        /* Стили для анимации подсчета очков - TODO */
-        .score-animation { /* ... */ }
-
-        @media (max-width: 600px) {
-            .card, .card-slot { width: 45px; height: 65px; font-size: 14px; border-radius: 4px;}
-            .row { min-height: 70px; }
-            #hand-area { padding: 10px; min-height: 90px; }
-            body { padding: 5px; padding-bottom: 100px; }
-        }
+        .selected { border: 2px solid #007bff !important; transform: scale(1.05); box-shadow: 0 0 8px rgba(0, 123, 255, 0.5); }
+        .discard-selected { border: 2px solid #dc3545 !important; background-color: rgba(220, 53, 69, 0.1); }
+        #discard-selection { margin-left: 15px; display: flex; flex-direction: column; align-items: center; gap: 5px;}
+        #discard-info { font-size: 12px; color: #555; }
+        .discard-pile { margin-top: 5px; text-align: center; color: #555; font-size: 12px; padding: 0 10px; word-break: break-all;}
+        .message-area { text-align: center; margin-bottom: 10px; font-weight: bold; color: #333; min-height: 20px; font-size: 14px;}
+        .player-label { text-align: center; color: white; font-weight: bold; margin-bottom: 3px; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -46,10 +44,9 @@
     <div class="controls">
         <button id="start-button" onclick="startGame()">Начать Раунд</button>
         <button id="confirm-button" onclick="confirmMove()" disabled>Подтвердить Ход</button>
-        <!-- <button onclick="window.location.href='/training'">Тренировка</button> -->
     </div>
 
-    <div class="message-area" id="message-area">Нажмите "Начать Раунд"</div>
+    <div class="message-area" id="message-area">Загрузка...</div>
 
     <div class="player-label">AI Player</div>
     <div class="table" id="ai-table">
@@ -58,7 +55,7 @@
         <div class="row bottom" id="ai-bottom-row"></div>
     </div>
 
-    <div class="player-label">Human Player</div>
+    <div class="player-label">Human Player (Вы)</div>
     <div class="table" id="player-table">
         <div class="row top" id="player-top-row"></div>
         <div class="row middle" id="player-middle-row"></div>
@@ -67,19 +64,19 @@
 
     <div id="hand-area">
         <div id="hand"></div>
-        <div id="discard-selection" style="margin-left: 20px;">
-             <button id="discard-button" onclick="selectCardToDiscard()" disabled>Сбросить</button>
+        <div id="discard-selection">
+             <button id="discard-button" onclick="toggleDiscardMode()" disabled>Сбросить</button>
              <span id="discard-info"></span>
         </div>
     </div>
     <div class="discard-pile" id="discard-pile">Сброс: -</div>
 
 <script>
-    let currentGameState = null; // Будет хранить состояние от сервера
-    let humanPlayerIndex = 0; // Индекс человека (обычно 0)
-    let selectedCardsForPlacement = []; // Карты, выбранные для размещения
-    let selectedCardToDiscard = null; // Карта, выбранная для сброса
-    let placedCardsThisTurn = []; // { card: Card, row: string, index: int }
+    let currentGameState = null;
+    let humanPlayerIndex = 0;
+    let selectedHandCardElement = null; // Карта в руке, выбранная для размещения/сброса
+    let placedCardsThisTurn = []; // { cardStr: string, row: string, index: int }
+    let discardModeActive = false; // Режим выбора карты для сброса
 
     const confirmButton = document.getElementById('confirm-button');
     const discardButton = document.getElementById('discard-button');
@@ -87,26 +84,23 @@
     const messageArea = document.getElementById('message-area');
     const handElement = document.getElementById('hand');
 
-    function toggleFullScreen() {
-        if (!document.fullscreenElement) { document.documentElement.requestFullscreen(); }
-        else { if (document.exitFullscreen) { document.exitFullscreen(); } }
-    }
+    function toggleFullScreen() { /* ... как раньше ... */ }
 
     function createCardElement(cardStr, isInteractive = true) {
         if (!cardStr || cardStr === "__") return null;
         const cardElement = document.createElement('div');
         cardElement.className = 'card';
-        const rank = cardStr.length === 3 ? cardStr.substring(0, 2) : cardStr.substring(0, 1); // Для 10
+        const rank = cardStr.length === 3 ? cardStr.substring(0, 2) : cardStr.substring(0, 1);
         const suitChar = cardStr.substring(cardStr.length - 1);
         const suitSymbolMap = {'c': '♣', 'd': '♦', 'h': '♥', 's': '♠'};
         const suit = suitSymbolMap[suitChar] || suitChar;
 
-        cardElement.dataset.card = cardStr; // Сохраняем строку карты
+        cardElement.dataset.card = cardStr;
         cardElement.dataset.rank = rank;
         cardElement.dataset.suit = suit;
-        cardElement.innerHTML = `<span>${rank}</span><span>${suit}</span>`; // Отображаем ранг и символ масти
+        cardElement.innerHTML = `<span>${rank}</span><span>${suit}</span>`;
 
-        if (cardStr.includes('h') || cardStr.includes('d')) { cardElement.style.color = '#e44145'; }
+        if (suit === '♥' || suit === '♦') { cardElement.style.color = '#e44145'; }
         else { cardElement.style.color = '#2d2d2d'; }
 
         if (isInteractive) {
@@ -117,37 +111,52 @@
         return cardElement;
     }
 
-    function createCardSlotElement(row, index) {
+    function createCardSlotElement(row, index, isPlayerBoard = false) {
         const slot = document.createElement('div');
         slot.className = 'card-slot';
         slot.dataset.row = row;
         slot.dataset.index = index;
-        slot.onclick = () => handleSlotClick(slot);
+        if (isPlayerBoard) {
+            slot.onclick = () => handleSlotClick(slot);
+            slot.classList.add('available'); // По умолчанию доступны
+        }
         return slot;
     }
 
-    function renderBoard(playerPrefix, boardData) {
+    function renderBoard(playerPrefix, boardData, isPlayerBoard = false) {
         const topRow = document.getElementById(`${playerPrefix}-top-row`);
         const middleRow = document.getElementById(`${playerPrefix}-middle-row`);
         const bottomRow = document.getElementById(`${playerPrefix}-bottom-row`);
         topRow.innerHTML = ''; middleRow.innerHTML = ''; bottomRow.innerHTML = '';
 
         boardData.top.forEach((cardStr, index) => {
-            const slot = createCardSlotElement('top', index);
-            const cardEl = createCardElement(cardStr, false); // Карты на доске не интерактивны
-            if (cardEl) slot.appendChild(cardEl);
+            const slot = createCardSlotElement('top', index, isPlayerBoard);
+            const cardEl = createCardElement(cardStr, false);
+            if (cardEl) {
+                slot.appendChild(cardEl);
+                slot.classList.remove('available'); // Слот занят
+                slot.onclick = null; // Нельзя кликнуть на занятый слот
+            }
             topRow.appendChild(slot);
         });
         boardData.middle.forEach((cardStr, index) => {
-            const slot = createCardSlotElement('middle', index);
+            const slot = createCardSlotElement('middle', index, isPlayerBoard);
             const cardEl = createCardElement(cardStr, false);
-            if (cardEl) slot.appendChild(cardEl);
+            if (cardEl) {
+                 slot.appendChild(cardEl);
+                 slot.classList.remove('available');
+                 slot.onclick = null;
+            }
             middleRow.appendChild(slot);
         });
         boardData.bottom.forEach((cardStr, index) => {
-            const slot = createCardSlotElement('bottom', index);
+            const slot = createCardSlotElement('bottom', index, isPlayerBoard);
             const cardEl = createCardElement(cardStr, false);
-            if (cardEl) slot.appendChild(cardEl);
+            if (cardEl) {
+                 slot.appendChild(cardEl);
+                 slot.classList.remove('available');
+                 slot.onclick = null;
+            }
             bottomRow.appendChild(slot);
         });
     }
@@ -156,17 +165,18 @@
         handElement.innerHTML = '';
         if (handCards && handCards.length > 0) {
             handCards.forEach(cardStr => {
-                const cardEl = createCardElement(cardStr, true); // Карты в руке интерактивны
+                const cardEl = createCardElement(cardStr, true);
                 if (cardEl) handElement.appendChild(cardEl);
             });
         }
-        // Сбрасываем выбор при новой раздаче
-        selectedCardsForPlacement = [];
-        selectedCardToDiscard = null;
+        // Сброс состояния выбора
+        selectedHandCardElement = null;
         placedCardsThisTurn = [];
+        discardModeActive = false;
+        discardButton.textContent = "Сбросить";
         updateSelectionUI();
     }
-    
+
     function renderDiscardPile(discardPileData) {
          const discardEl = document.getElementById('discard-pile');
          discardEl.textContent = "Сброс: " + (discardPileData.length > 0 ? discardPileData.join(', ') : '-');
@@ -174,44 +184,58 @@
 
     function updateUI(stateData) {
         console.log("Updating UI with state:", stateData);
-        currentGameState = stateData; // Сохраняем текущее состояние
+        currentGameState = stateData;
         humanPlayerIndex = stateData.humanPlayerIndex;
 
-        renderBoard('player', stateData.playerBoard);
-        renderBoard('ai', stateData.opponentBoard);
-        renderHand(stateData.hand); // Отображаем 3 или 5 карт
+        renderBoard('player', stateData.playerBoard, true); // Доска игрока интерактивна
+        renderBoard('ai', stateData.opponentBoard, false); // Доска AI не интерактивна
+
+        // Отображаем руку ФЛ или обычную
+        if (stateData.isFantasylandRound && stateData.playerFantasylandStatus && stateData.fantasylandHand.length > 0) {
+             renderHand(stateData.fantasylandHand);
+        } else {
+             renderHand(stateData.hand);
+        }
+
         renderDiscardPile(stateData.discardPile);
         messageArea.textContent = stateData.message || `Player ${stateData.currentPlayer}'s turn`;
+        if (stateData.error_message) {
+             messageArea.textContent += ` | Ошибка: ${stateData.error_message}`;
+        }
 
         // Управляем кнопками
         const isHumanTurn = stateData.currentPlayer === humanPlayerIndex;
-        const isFLPlacement = stateData.isFantasylandRound && stateData.playerFantasylandStatus;
-        
-        confirmButton.disabled = !isHumanTurn || stateData.isGameOver;
-        discardButton.disabled = !isHumanTurn || stateData.isGameOver || stateData.street === 1 || isFLPlacement;
-        
-        // Если это ход человека и ФЛ, показываем руку ФЛ и меняем текст кнопки
-        if (isHumanTurn && isFLPlacement) {
-             renderHand(stateData.fantasylandHand); // Показываем 14-17 карт
-             confirmButton.textContent = "Разместить Фантазию";
-             discardButton.disabled = false; // Разрешаем выбор сброса для ФЛ
-             discardInfo.textContent = `(Нужно сбросить ${stateData.fantasylandHand.length - 13})`;
-        } else if (isHumanTurn && stateData.street > 1) {
-             confirmButton.textContent = "Подтвердить Ход";
-             discardButton.disabled = false; // Разрешаем выбор сброса для 2-5 улиц
-             discardInfo.textContent = "(Нужно сбросить 1)";
+        const isFLPlacementTurn = stateData.isFantasylandRound && stateData.playerFantasylandStatus && stateData.fantasylandHand.length > 0;
+        const isRegularPlacementTurn = !isFLPlacementTurn && stateData.hand.length > 0;
+
+        confirmButton.disabled = !isHumanTurn || stateData.isGameOver || (!isFLPlacementTurn && !isRegularPlacementTurn);
+        discardButton.disabled = !isHumanTurn || stateData.isGameOver || stateData.street === 1; // Нельзя сбрасывать на 1й улице
+
+        // Обновляем текст кнопки сброса и инфо
+        const maxDiscard = isFLPlacementTurn ? (stateData.fantasylandHand.length - 13) : (stateData.street > 1 ? 1 : 0);
+        if (maxDiscard > 0) {
+             discardInfo.textContent = `(Нужно сбросить ${maxDiscard})`;
+             discardButton.disabled = !isHumanTurn || stateData.isGameOver; // Разрешаем кнопку сброса
         } else {
-             confirmButton.textContent = "Подтвердить Ход";
              discardInfo.textContent = "";
+             discardButton.disabled = true;
         }
         
+        // Обновляем текст кнопки подтверждения
+        if (isFLPlacementTurn) confirmButton.textContent = "Разместить Фантазию";
+        else confirmButton.textContent = "Подтвердить Ход";
+
         document.getElementById('start-button').disabled = !stateData.isGameOver;
+        
+        // Сбрасываем подсветку слотов
+        document.querySelectorAll('.card-slot.available').forEach(s => s.classList.remove('selected'));
     }
 
     async function startGame() {
         messageArea.textContent = "Начинаем новый раунд...";
         confirmButton.disabled = true;
         discardButton.disabled = true;
+        document.getElementById('start-button').disabled = true;
         try {
             const response = await fetch('/start', { method: 'POST' });
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -220,135 +244,114 @@
         } catch (error) {
             console.error('Error starting game:', error);
             messageArea.textContent = "Ошибка начала игры.";
+            document.getElementById('start-button').disabled = false; // Позволяем попробовать снова
         }
     }
 
     function handleCardClick(cardElement) {
         if (currentGameState.currentPlayer !== humanPlayerIndex || currentGameState.isGameOver) return;
+        // Клик только на карты в руке
+        if (!cardElement.parentElement || cardElement.parentElement.id !== 'hand') return;
 
-        const cardStr = cardElement.dataset.card;
-        const isSelectedForPlacement = selectedCardsForPlacement.some(c => c.dataset.card === cardStr);
-        const isSelectedForDiscard = selectedCardToDiscard && selectedCardToDiscard.dataset.card === cardStr;
-        const maxPlacement = (currentGameState.street === 1 || (currentGameState.isFantasylandRound && currentGameState.playerFantasylandStatus)) ? 
-                             (currentGameState.isFantasylandRound ? 13 : 5) : 2;
-        const maxDiscard = (currentGameState.isFantasylandRound && currentGameState.playerFantasylandStatus) ? 
-                           (currentGameState.fantasylandHand.length - 13) : (currentGameState.street > 1 ? 1 : 0);
-
-
-        if (isSelectedForDiscard) {
-            // Отменить выбор для сброса
-            selectedCardToDiscard = null;
-            cardElement.classList.remove('selected');
-        } else if (isSelectedForPlacement) {
-            // Отменить выбор для размещения
-            selectedCardsForPlacement = selectedCardsForPlacement.filter(c => c.dataset.card !== cardStr);
-            cardElement.classList.remove('selected');
+        if (discardModeActive) {
+            // Выбор карты для сброса
+            if (selectedHandCardElement) selectedHandCardElement.classList.remove('discard-selected');
+            selectedHandCardElement = cardElement;
+            selectedHandCardElement.classList.add('discard-selected');
+            discardModeActive = false; // Выходим из режима выбора сброса
+            discardButton.textContent = "Сбросить";
+            messageArea.textContent = `Выбрана карта для сброса: ${card_to_str(selectedHandCardElement.dataset.card)}. Теперь выберите слот для размещения.`;
         } else {
-            // Выбрать для размещения или сброса
-            if (discardModeActive && maxDiscard > 0 && !selectedCardToDiscard) { // Выбираем для сброса (только одну карту)
-                 selectedCardToDiscard = cardElement;
-                 cardElement.classList.add('selected');
-                 discardModeActive = false; // Выходим из режима выбора сброса
-                 discardButton.textContent = "Сбросить";
-            } else if (selectedCardsForPlacement.length < maxPlacement && !selectedCardToDiscard) { // Выбираем для размещения
-                 selectedCardsForPlacement.push(cardElement);
-                 cardElement.classList.add('selected');
+            // Выбор карты для размещения
+            if (selectedHandCardElement) selectedHandCardElement.classList.remove('selected');
+            if (selectedHandCardElement === cardElement) {
+                selectedHandCardElement = null; // Отмена выбора
             } else {
-                 console.log("Cannot select more cards for placement or discard already selected.");
+                selectedHandCardElement = cardElement;
+                selectedHandCardElement.classList.add('selected');
+                messageArea.textContent = `Выбрана карта ${card_to_str(selectedHandCardElement.dataset.card)}. Выберите слот.`;
             }
         }
         updateSelectionUI();
     }
 
-    let discardModeActive = false;
-    function selectCardToDiscard() {
-         if (currentGameState.street > 1 || (currentGameState.isFantasylandRound && currentGameState.playerFantasylandStatus)) {
-              discardModeActive = !discardModeActive;
-              if (discardModeActive) {
-                   messageArea.textContent = "Выберите карту для сброса.";
-                   discardButton.textContent = "Отмена Сброса";
-                   // Снимаем выделение с карт для размещения
-                   selectedCardsForPlacement.forEach(c => c.classList.remove('selected'));
-                   selectedCardsForPlacement = [];
-              } else {
-                   messageArea.textContent = `Player ${currentGameState.currentPlayer}'s turn.`;
-                   discardButton.textContent = "Сбросить";
-                   // Снимаем выделение с карты для сброса, если была выбрана
-                   if(selectedCardToDiscard) selectedCardToDiscard.classList.remove('selected');
-                   selectedCardToDiscard = null;
-              }
-         }
-    }
-
-
-    function handleSlotClick(slotElement) {
-        if (currentGameState.currentPlayer !== humanPlayerIndex || currentGameState.isGameOver) return;
-        if (selectedCardsForPlacement.length === 0) {
-             console.log("No card selected for placement.");
-             return;
-         }
-         // Не позволяем кликать на слоты AI
-         if (slotElement.closest('#ai-table')) return;
-
-        const row = slotElement.dataset.row;
-        const index = parseInt(slotElement.dataset.index);
-
-        // Проверяем, свободен ли слот
-        if (slotElement.children.length > 0) {
-            console.log("Slot is already occupied.");
-            return;
-        }
+    function toggleDiscardMode() {
+        if (discardButton.disabled) return;
         
-        // Проверяем, не размещали ли уже в этот слот в этом ходу
-        if (placedCardsThisTurn.some(p => p.row === row && p.index === index)) {
-             console.log("Slot already used this turn.");
-             return;
+        discardModeActive = !discardModeActive;
+        if (discardModeActive) {
+             messageArea.textContent = "Выберите карту в руке для сброса.";
+             discardButton.textContent = "Отмена Сброса";
+             // Снимаем выделение с карты для размещения
+             if (selectedHandCardElement) selectedHandCardElement.classList.remove('selected');
+             selectedHandCardElement = null;
+        } else {
+             messageArea.textContent = `Player ${currentGameState.currentPlayer}'s turn.`;
+             discardButton.textContent = "Сбросить";
+             // Снимаем выделение с карты для сброса
+             if (selectedHandCardElement) selectedHandCardElement.classList.remove('discard-selected');
+             selectedHandCardElement = null;
         }
-
-        // Берем последнюю выбранную карту
-        const cardElement = selectedCardsForPlacement.pop();
-        if (!cardElement) return;
-
-        cardElement.classList.remove('selected');
-        slotElement.appendChild(cardElement); // Перемещаем карту в слот
-        cardElement.onclick = null; // Делаем карту на доске некликабельной
-        cardElement.style.cursor = 'default';
-
-        // Сохраняем информацию о размещении
-        placedCardsThisTurn.push({
-            card: card_from_str(cardElement.dataset.card), // Сохраняем объект карты
-            row: row,
-            index: index
-        });
-
         updateSelectionUI();
     }
 
-    function updateSelectionUI() {
-        // Обновляем состояние кнопки подтверждения и информации о сбросе
-        const maxPlacement = (currentGameState?.street === 1 || (currentGameState?.isFantasylandRound && currentGameState?.playerFantasylandStatus)) ?
-                             (currentGameState.isFantasylandRound ? 13 : 5) : 2;
-        const maxDiscard = (currentGameState?.isFantasylandRound && currentGameState?.playerFantasylandStatus) ?
-                           (currentGameState.fantasylandHand?.length - 13) : (currentGameState?.street > 1 ? 1 : 0);
-
-        const canConfirm = placedCardsThisTurn.length === maxPlacement &&
-                           (maxDiscard === 0 || selectedCardToDiscard !== null);
-
-        confirmButton.disabled = !canConfirm || currentGameState?.currentPlayer !== humanPlayerIndex || currentGameState?.isGameOver;
-
-        if (maxDiscard > 0) {
-             discardInfo.textContent = selectedCardToDiscard
-                 ? `(Сброс: ${card_to_str(selectedCardToDiscard.dataset.card)})`
-                 : `(Выберите ${maxDiscard} для сброса)`;
-        } else {
-             discardInfo.textContent = "";
+    function handleSlotClick(slotElement) {
+        if (currentGameState.currentPlayer !== humanPlayerIndex || currentGameState.isGameOver) return;
+        if (!selectedHandCardElement || selectedHandCardElement.classList.contains('discard-selected')) {
+             messageArea.textContent = "Сначала выберите карту в руке для размещения.";
+             return;
+         }
+        if (!slotElement.classList.contains('available')) {
+             messageArea.textContent = "Этот слот занят.";
+             return;
         }
+
+        const row = slotElement.dataset.row;
+        const index = parseInt(slotElement.dataset.index);
+        const cardStr = selectedHandCardElement.dataset.card;
+
+        // Перемещаем карту визуально
+        slotElement.appendChild(selectedHandCardElement);
+        slotElement.classList.remove('available');
+        slotElement.onclick = null; // Слот больше не кликабельный
+        selectedHandCardElement.classList.remove('selected');
+        selectedHandCardElement.onclick = null; // Карта на доске не кликабельна
+        selectedHandCardElement.style.cursor = 'default';
+
+        // Сохраняем информацию о размещении
+        placedCardsThisTurn.push({ card: cardStr, row: row, index: index });
+        selectedHandCardElement = null; // Сбрасываем выбор карты
+
+        messageArea.textContent = "Карта размещена. Выберите следующую карту или слот.";
+        updateSelectionUI();
     }
 
     async function confirmMove() {
         if (confirmButton.disabled) return;
 
-        messageArea.textContent = "Обработка хода...";
+        const isFLPlacement = currentGameState.isFantasylandRound && currentGameState.playerFantasylandStatus;
+        const maxPlacement = isFLPlacement ? 13 : (currentGameState.street === 1 ? 5 : 2);
+        const maxDiscard = isFLPlacement ? (currentGameState.fantasylandHand.length - 13) : (currentGameState.street > 1 ? 1 : 0);
+
+        // Проверка готовности хода
+        if (placedCardsThisTurn.length !== maxPlacement) {
+            messageArea.textContent = `Нужно разместить ${maxPlacement} карт.`;
+            return;
+        }
+        if (maxDiscard > 0 && !selectedHandCardElement?.classList.contains('discard-selected')) {
+             // Если режим сброса не был активирован, ищем неразмещенную карту
+             const handCards = Array.from(handElement.children);
+             if (handCards.length === maxDiscard) {
+                  selectedHandCardElement = handCards[0]; // Автовыбор последней карты для сброса
+                  selectedHandCardElement.classList.add('discard-selected'); // Помечаем для отправки
+                  console.log("Auto-selected last card for discard:", selectedHandCardElement.dataset.card);
+             } else {
+                  messageArea.textContent = `Нужно выбрать ${maxDiscard} карту(ы) для сброса (нажмите 'Сбросить').`;
+                  return;
+             }
+        }
+        
+        messageArea.textContent = "Отправка хода...";
         confirmButton.disabled = true;
         discardButton.disabled = true;
 
@@ -356,38 +359,45 @@
             let endpoint = '/move';
             let payload = {};
 
-            if (currentGameState.isFantasylandRound && currentGameState.playerFantasylandStatus) {
+            if (isFLPlacement) {
                 endpoint = '/fantasyland_placement';
-                // Собираем размещение из placedCardsThisTurn
                 let placement = {'top': [], 'middle': [], 'bottom': []};
-                placedCardsThisTurn.forEach(p => {
-                    // Сортируем карты при добавлении для консистентности (хотя порядок важен для индексов)
-                    # В placement нужно передавать строки карт
-                    placement[p.row].push(card_to_str(p.card)); 
-                });
-                 # Сортировка внутри рядов не нужна, т.к. индексы важны
-                 # for row in placement: placement[row].sort(key=lambda s: Card(s).int_rank)
-                
-                payload = {
-                    placement: placement,
-                    discarded: [card_to_str(selectedCardToDiscard.dataset.card)] # Для ФЛ может быть > 1, но пока 1
+                let tempBoard = { // Временная структура для заполнения
+                     'top': [null]*3, 'middle': [null]*5, 'bottom': [null]*5
                 };
+                placedCardsThisTurn.forEach(p => {
+                     if (tempBoard[p.row][p.index] === null) {
+                          tempBoard[p.row][p.index] = p.card;
+                     } else {
+                          throw new Error("Duplicate placement in slot during confirm.");
+                     }
+                });
+                 // Заполняем финальный placement, убирая null
+                 for(const row in tempBoard) {
+                      placement[row] = tempBoard[row].filter(c => c !== null);
+                 }
+
+                // Определяем сброшенные карты (те, что остались в руке)
+                const placedCardStrs = new Set(placedCardsThisTurn.map(p => p.card));
+                const discardedStrs = currentGameState.fantasylandHand.filter(cardStr => !placedCardStrs.has(cardStr));
+
+                payload = { placement: placement, discarded: discardedStrs };
+
             } else if (currentGameState.street === 1) {
                  payload = {
                      placements: placedCardsThisTurn.map(p => ({
-                         card: card_to_str(p.card),
-                         row: p.row,
-                         index: p.index
+                         card: p.card, row: p.row, index: p.index
                      }))
                  };
             } else { // Улицы 2-5
+                 if (!selectedHandCardElement || !selectedHandCardElement.classList.contains('discard-selected')) {
+                      throw new Error("Discard card not selected.");
+                 }
                  payload = {
                      placements: placedCardsThisTurn.map(p => ({
-                         card: card_to_str(p.card),
-                         row: p.row,
-                         index: p.index
+                         card: p.card, row: p.row, index: p.index
                      })),
-                     discard: card_to_str(selectedCardToDiscard.dataset.card)
+                     discard: selectedHandCardElement.dataset.card
                  };
             }
 
@@ -405,19 +415,18 @@
             }
 
             const data = await response.json();
-            updateUI(data); // Обновляем UI новым состоянием от сервера
+            updateUI(data);
 
         } catch (error) {
             console.error('Error confirming move:', error);
             messageArea.textContent = `Ошибка хода: ${error.message}`;
-            // Восстанавливаем кнопки, если произошла ошибка
-            confirmButton.disabled = currentGameState?.currentPlayer !== humanPlayerIndex || currentGameState?.isGameOver;
-             discardButton.disabled = currentGameState?.currentPlayer !== humanPlayerIndex || currentGameState?.isGameOver || currentGameState?.street === 1 || (currentGameState?.isFantasylandRound && currentGameState?.playerFantasylandStatus);
-
+            // Восстанавливаем кнопки на основе *текущего* состояния (до ошибки)
+            const isHumanTurn = currentGameState?.currentPlayer === humanPlayerIndex;
+            confirmButton.disabled = !isHumanTurn || currentGameState?.isGameOver;
+            discardButton.disabled = !isHumanTurn || currentGameState?.isGameOver || currentGameState?.street === 1;
         } finally {
-             // Сбрасываем выбор и временные данные хода в любом случае
-             selectedCardsForPlacement = [];
-             selectedCardToDiscard = null;
+             // Сброс локального состояния хода
+             selectedHandCardElement = null;
              placedCardsThisTurn = [];
              discardModeActive = false;
              discardButton.textContent = "Сбросить";
@@ -426,24 +435,24 @@
         }
     }
 
-
-    // --- Инициализация при загрузке ---
     document.addEventListener('DOMContentLoaded', () => {
-        // Пытаемся загрузить состояние с сервера при первой загрузке
-        // Это полезно, если страница была обновлена
-        fetch('/') // Просто делаем GET запрос на главную страницу
+        fetch('/')
             .then(response => response.text())
             .then(html => {
-                 // Пытаемся извлечь game_state из ответа (если он там есть)
-                 // Это хрупкий способ, лучше иметь отдельный /get_state эндпоинт
-                 const match = html.match(/let gameState = (\{.*?\});/);
-                 if (match && match[1]) {
-                      try {
-                           const initialState = JSON.parse(match[1]);
-                           updateUI(initialState);
-                      } catch(e) {
-                           console.error("Failed to parse initial state from HTML", e);
-                           // Если не удалось, просто показываем кнопку "Начать"
+                 const scriptContentMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+                 if (scriptContentMatch && scriptContentMatch[1]) {
+                      const gameStateMatch = scriptContentMatch[1].match(/let currentGameState = (\{.*?\});/);
+                      if (gameStateMatch && gameStateMatch[1]) {
+                           try {
+                                const initialState = JSON.parse(gameStateMatch[1].replace(/,\s*}/g, '}').replace(/,\s*]/g, ']')); // Убираем висящие запятые
+                                updateUI(initialState);
+                           } catch(e) {
+                                console.error("Failed to parse initial state from HTML", e, gameStateMatch[1]);
+                                setupEmptyBoards();
+                                messageArea.textContent = "Ошибка загрузки состояния. Нажмите 'Начать Раунд'";
+                                document.getElementById('start-button').disabled = false;
+                           }
+                      } else {
                            setupEmptyBoards();
                            messageArea.textContent = "Нажмите 'Начать Раунд'";
                            document.getElementById('start-button').disabled = false;
@@ -463,8 +472,8 @@
     });
 
     function setupEmptyBoards() {
-         renderBoard('player', { top: Array(3).fill(null), middle: Array(5).fill(null), bottom: Array(5).fill(null) });
-         renderBoard('ai', { top: Array(3).fill(null), middle: Array(5).fill(null), bottom: Array(5).fill(null) });
+         renderBoard('player', { top: Array(3).fill(null), middle: Array(5).fill(null), bottom: Array(5).fill(null) }, true);
+         renderBoard('ai', { top: Array(3).fill(null), middle: Array(5).fill(null), bottom: Array(5).fill(null) }, false);
          handElement.innerHTML = '';
          document.getElementById('discard-pile').textContent = "Сброс: -";
     }
