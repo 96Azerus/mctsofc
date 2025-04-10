@@ -2,44 +2,87 @@
 import math
 import time
 import random
-# import multiprocessing # УДАЛЕНО
+import multiprocessing # Добавляем импорт
+import traceback # Для отладки ошибок
 from typing import Optional, Any, List, Tuple, Set
-from mcts_node import MCTSNode
+from mcts_node import MCTSNode # Импортируем обновленный MCTSNode
 from game_state import GameState
 from fantasyland_solver import FantasylandSolver
-from card import card_to_str
-import traceback # Добавлено для отладки ошибок
+from card import card_to_str # Импортируем для форматирования
 
-# Функция-воркер run_parallel_rollout УДАЛЕНА
+# Функция-воркер для параллельного роллаута (должна быть вне класса для pickle)
+def run_parallel_rollout(node_state_dict: dict) -> Tuple[float, Set[Any]]:
+    """Запускает один роллаут из переданного состояния узла."""
+    # Восстанавливаем состояние и создаем временный узел
+    try:
+        game_state = GameState.from_dict(node_state_dict)
+        # Убедимся, что состояние не терминальное перед роллаутом
+        if game_state.is_round_over():
+             # Если терминальное, возвращаем счет напрямую
+             score_p0 = game_state.get_terminal_score()
+             return float(score_p0), set()
+
+        temp_node = MCTSNode(game_state) # Parent и action не важны для роллаута
+        # Запускаем роллаут с точки зрения игрока 0
+        reward, sim_actions = temp_node.rollout(perspective_player=0)
+        return reward, sim_actions
+    except Exception as e:
+        print(f"Error in parallel rollout worker: {e}")
+        traceback.print_exc()
+        return 0.0, set() # Возвращаем нейтральный результат в случае ошибки
+
 
 class MCTSAgent:
-    """Агент MCTS для OFC Pineapple с RAVE (БЕЗ параллелизации)."""
+    """Агент MCTS для OFC Pineapple с RAVE и параллелизацией."""
     DEFAULT_EXPLORATION = 1.414
     DEFAULT_RAVE_K = 500
     DEFAULT_TIME_LIMIT_MS = 5000
-    # Параметры параллелизации УДАЛЕНЫ
+    # Используем N-1 ядер, но не менее 1
+    DEFAULT_NUM_WORKERS = max(1, multiprocessing.cpu_count() - 1 if multiprocessing.cpu_count() > 1 else 1)
+    DEFAULT_ROLLOUTS_PER_LEAF = 4 # Количество роллаутов на лист за одну параллельную итерацию
 
     def __init__(self,
                  exploration: Optional[float] = None,
                  rave_k: Optional[float] = None,
-                 time_limit_ms: Optional[int] = None):
-                 # num_workers, rollouts_per_leaf УДАЛЕНЫ
+                 time_limit_ms: Optional[int] = None,
+                 num_workers: Optional[int] = None, # Параметр для кол-ва воркеров
+                 rollouts_per_leaf: Optional[int] = None): # Параметр для кол-ва роллаутов на лист
 
         self.exploration = exploration if exploration is not None else self.DEFAULT_EXPLORATION
         self.rave_k = rave_k if rave_k is not None else self.DEFAULT_RAVE_K
         time_limit_val = time_limit_ms if time_limit_ms is not None else self.DEFAULT_TIME_LIMIT_MS
-        self.time_limit = time_limit_val / 1000.0
+        self.time_limit = time_limit_val / 1000.0 # Конвертируем в секунды
+        # Ограничиваем num_workers максимальным количеством ядер
+        max_cpus = multiprocessing.cpu_count()
+        requested_workers = num_workers if num_workers is not None else self.DEFAULT_NUM_WORKERS
+        self.num_workers = max(1, min(requested_workers, max_cpus))
+
+        self.rollouts_per_leaf = rollouts_per_leaf if rollouts_per_leaf is not None else self.DEFAULT_ROLLOUTS_PER_LEAF
+        # Уменьшаем rollouts_per_leaf, если воркеров мало, чтобы избежать простоя
+        if self.num_workers == 1 and self.rollouts_per_leaf > 1:
+             print(f"Warning: num_workers=1, reducing rollouts_per_leaf from {self.rollouts_per_leaf} to 1.")
+             self.rollouts_per_leaf = 1
 
         self.fantasyland_solver = FantasylandSolver()
-        print(f"MCTS Agent initialized with: TimeLimit={self.time_limit:.2f}s, Exploration={self.exploration}, RaveK={self.rave_k} (Single-threaded)")
+        print(f"MCTS Agent initialized with: TimeLimit={self.time_limit:.2f}s, Exploration={self.exploration}, RaveK={self.rave_k}, Workers={self.num_workers}, RolloutsPerLeaf={self.rollouts_per_leaf}")
 
-        # Вызов set_start_method УДАЛЕН
+        # Устанавливаем метод старта процессов (важно для некоторых ОС и окружений)
+        # Делаем это один раз глобально, если возможно
+        try:
+             # Проверяем, установлен ли метод, и если нет, или не 'spawn', пытаемся установить 'spawn'
+             current_method = multiprocessing.get_start_method(allow_none=True)
+             if current_method != 'spawn':
+                  # print(f"Attempting to set multiprocessing start method to 'spawn' (current: {current_method}).")
+                  multiprocessing.set_start_method('spawn', force=True) # force=True может быть необходимо
+                  # print(f"Multiprocessing start method set to: {multiprocessing.get_start_method()}")
+        except Exception as e:
+             print(f"Warning: Could not set multiprocessing start method to 'spawn': {e}. Using default ({multiprocessing.get_start_method()}).")
 
 
     def choose_action(self, game_state: GameState) -> Optional[Any]:
-        """Выбирает лучшее действие с помощью MCTS (последовательно)."""
+        """Выбирает лучшее действие с помощью MCTS с параллелизацией."""
+        # Определяем игрока, для которого выбираем ход
         player_to_act = -1
-        # ... (логика определения player_to_act как раньше) ...
         gs = game_state
         if gs.is_fantasyland_round:
              for i in range(gs.NUM_PLAYERS):
@@ -52,13 +95,13 @@ class MCTSAgent:
              if player_to_act == -1: player_to_act = gs.current_player_idx
         else:
              player_to_act = gs.current_player_idx
+
         if player_to_act == -1:
              print("Error: Could not determine player to act in choose_action.")
              return None
 
-        # --- Обработка хода в Fantasyland (без изменений) ---
+        # --- Обработка хода в Fantasyland ---
         if game_state.is_fantasyland_round and game_state.fantasyland_status[player_to_act]:
-             # ... (код как раньше) ...
              hand = game_state.fantasyland_hands[player_to_act]
              if hand:
                  # print(f"Player {player_to_act} solving Fantasyland...")
@@ -90,78 +133,87 @@ class MCTSAgent:
         start_time = time.time()
         num_simulations = 0
 
-        # --- Последовательный MCTS цикл ---
         try:
-            while time.time() - start_time < self.time_limit:
-                # --- Selection & Expansion ---
-                path, leaf_node = self._select(root_node)
-                if leaf_node is None: continue
+            # Используем контекстный менеджер для пула
+            with multiprocessing.Pool(processes=self.num_workers) as pool:
+                while time.time() - start_time < self.time_limit:
+                    # --- Selection ---
+                    path, leaf_node = self._select(root_node)
+                    if leaf_node is None: continue
 
-                simulation_actions = set()
-                reward = 0.0
-                node_to_rollout_from = leaf_node
-                expanded_node = None
+                    results = []
+                    simulation_actions_aggregated = set()
+                    node_to_rollout_from = leaf_node
+                    expanded_node = None
 
-                if not leaf_node.is_terminal():
-                    # --- Expansion (попытка) ---
-                    if leaf_node.untried_actions:
-                         expanded_node = leaf_node.expand()
-                         if expanded_node:
-                              node_to_rollout_from = expanded_node
-                              path.append(expanded_node)
+                    if not leaf_node.is_terminal():
+                        # --- Expansion (попытка) ---
+                        if leaf_node.untried_actions:
+                             expanded_node = leaf_node.expand()
+                             if expanded_node:
+                                  node_to_rollout_from = expanded_node
+                                  path.append(expanded_node)
 
-                    # --- Rollout (последовательный) ---
-                    reward, sim_actions = node_to_rollout_from.rollout(perspective_player=0)
-                    simulation_actions.update(sim_actions)
-                    num_simulations += 1
-                else: # Лист терминальный
-                    reward = leaf_node.game_state.get_terminal_score()
-                    num_simulations += 1
+                        # --- Parallel Rollouts ---
+                        try:
+                            node_state_dict = node_to_rollout_from.game_state.to_dict()
+                        except Exception as e:
+                             print(f"Error serializing state for parallel rollout: {e}")
+                             continue
 
-                # --- Backpropagation ---
-                # Добавляем действие, приведшее к expanded_node (если было)
-                if expanded_node and expanded_node.action:
-                     simulation_actions.add(expanded_node.action)
-                self._backpropagate(path, reward, simulation_actions) # Используем обычный _backpropagate
+                        async_results = [pool.apply_async(run_parallel_rollout, (node_state_dict,))
+                                         for _ in range(self.rollouts_per_leaf)]
+
+                        for res in async_results:
+                            try:
+                                timeout_get = max(0.1, self.time_limit * 0.1)
+                                reward, sim_actions = res.get(timeout=timeout_get)
+                                results.append(reward)
+                                simulation_actions_aggregated.update(sim_actions)
+                                num_simulations += 1
+                            except multiprocessing.TimeoutError:
+                                print("Warning: Rollout worker timed out.")
+                            except Exception as e:
+                                print(f"Warning: Error getting result from worker: {e}")
+
+                    else: # Лист терминальный
+                        reward = leaf_node.game_state.get_terminal_score()
+                        results.append(reward)
+                        num_simulations += 1
+
+                    # --- Backpropagation ---
+                    if results:
+                        total_reward_from_batch = sum(results)
+                        num_rollouts_in_batch = len(results)
+                        if expanded_node and expanded_node.action:
+                             simulation_actions_aggregated.add(expanded_node.action)
+                        self._backpropagate_parallel(path, total_reward_from_batch, num_rollouts_in_batch, simulation_actions_aggregated)
 
         except Exception as e:
-             print(f"Error during MCTS sequential execution: {e}")
+             print(f"Error during MCTS parallel execution: {e}")
              traceback.print_exc()
              return random.choice(initial_actions) if initial_actions else None
 
         elapsed_time = time.time() - start_time
-        # print(f"MCTS ran {num_simulations} simulations in {elapsed_time:.3f}s ({num_simulations/elapsed_time:.1f} sims/s) sequentially.")
+        # print(f"MCTS ran {num_simulations} simulations in {elapsed_time:.3f}s ({num_simulations/elapsed_time:.1f} sims/s) using {self.num_workers} workers.")
 
-        # --- Выбор лучшего хода (без изменений) ---
+        # --- Выбор лучшего хода ---
         if not root_node.children:
             return random.choice(initial_actions) if initial_actions else None
 
-        # ... (Вывод статистики и выбор best_action_robust как раньше) ...
-        # N_best = 5
-        # sorted_children = sorted(root_node.children.items(), key=lambda item: item[1].visits, reverse=True)
-        # print(f"--- MCTS Action Stats for Player {player_to_act} (Top {N_best}) ---")
-        # total_visits = root_node.visits if root_node.visits > 0 else 1
-        # for i, (action, child) in enumerate(sorted_children):
-        #      if i >= N_best and child.visits < 1: break
-        #      q_val = child.get_q_value(perspective_player=player_to_act)
-        #      rave_q = root_node.get_rave_q_value(action, perspective_player=player_to_act)
-        #      visit_perc = (child.visits / total_visits) * 100
-        #      print(f"  Action: {self._format_action(action)}")
-        #      print(f"    Visits: {child.visits} ({visit_perc:.1f}%) | Q: {q_val:.3f} | RAVE_Q: {rave_q:.3f}")
-        # print("---------------------------------")
+        # Вывод статистики (опционально)
+        # ...
 
         best_action_robust = max(root_node.children, key=lambda act: root_node.children[act].visits)
-        # print(f"Chosen action (most visited): {self._format_action(best_action_robust)}")
         return best_action_robust
 
 
     def _select(self, node: MCTSNode) -> Tuple[List[MCTSNode], Optional[MCTSNode]]:
-        """Фаза выбора узла для расширения/симуляции (без изменений)."""
-        # ... (код как в предыдущей версии) ...
+        """Фаза выбора узла для расширения/симуляции."""
         path = [node]
         current_node = node
         while not current_node.is_terminal():
-            player_to_move = current_node._get_player_to_move() # Используем хелпер узла
+            player_to_move = current_node._get_player_to_move()
             if player_to_move == -1: return path, current_node # Терминальный
 
             if current_node.untried_actions is None:
@@ -190,15 +242,17 @@ class MCTSAgent:
         return path, current_node
 
 
-    def _backpropagate(self, path: List[MCTSNode], reward: float, simulation_actions: Set[Any]):
-        """Обычный обратный проход (не параллельный)."""
-        # reward - счет с точки зрения игрока 0
+    def _backpropagate_parallel(self, path: List[MCTSNode], total_reward: float, num_rollouts: int, simulation_actions: Set[Any]):
+        """Фаза обратного распространения для параллельных роллаутов."""
+        if num_rollouts == 0: return
+
         for node in reversed(path):
-            node.visits += 1
+            node.visits += num_rollouts
+            # Игрок, который сделал ход СЮДА
             player_who_acted = node.parent._get_player_to_move() if node.parent else -1
 
-            if player_who_acted == 0: node.total_reward += reward
-            elif player_who_acted == 1: node.total_reward -= reward
+            if player_who_acted == 0: node.total_reward += total_reward
+            elif player_who_acted == 1: node.total_reward -= total_reward
 
             # Обновляем RAVE
             player_to_move_from_node = node._get_player_to_move()
@@ -209,16 +263,15 @@ class MCTSAgent:
 
                  for action in relevant_sim_actions:
                       if action in node.rave_visits:
-                           node.rave_visits[action] += 1
-                           if player_to_move_from_node == 0: node.rave_total_reward[action] += reward
-                           elif player_to_move_from_node == 1: node.rave_total_reward[action] -= reward
+                           # Приближение: увеличиваем на num_rollouts
+                           node.rave_visits[action] += num_rollouts
+                           # RAVE награда обновляется с точки зрения игрока player_to_move_from_node
+                           if player_to_move_from_node == 0: node.rave_total_reward[action] += total_reward
+                           elif player_to_move_from_node == 1: node.rave_total_reward[action] -= total_reward
 
-
-    # Метод _backpropagate_parallel УДАЛЕН
 
     def _format_action(self, action: Any) -> str:
-        """Форматирует действие для вывода (без изменений)."""
-        # ... (код как в предыдущей версии) ...
+        """Форматирует действие для вывода."""
         if action is None: return "None"
         try:
             if isinstance(action, tuple) and len(action) == 3 and isinstance(action[0], tuple) and isinstance(action[0][0], Card):
