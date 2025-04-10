@@ -3,6 +3,7 @@ import os
 import pickle
 import base64
 import random
+from typing import List, Set, Optional, Tuple, Any
 from flask import Flask, render_template, request, jsonify, session
 
 # Импортируем наши модули ИИ
