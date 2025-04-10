@@ -3,17 +3,21 @@ import math
 import random
 from typing import Optional, Dict, Any, List, Tuple, Set
 from game_state import GameState # Импортируем GameState
-from card import Card
-from scoring import RANK_CLASS_QUADS, RANK_CLASS_TRIPS, get_hand_rank_safe # Для эвристик
+from card import Card, card_to_str # Добавлен card_to_str
+from scoring import (RANK_CLASS_QUADS, RANK_CLASS_TRIPS, get_hand_rank_safe,
+                     check_board_foul, get_row_royalty, RANK_CLASS_PAIR,
+                     RANK_CLASS_HIGH_CARD) # Добавлены импорты для эвристик
+from itertools import combinations # Для ФЛ эвристики
+from fantasyland_solver import FantasylandSolver # Для ФЛ эвристики
 
 class MCTSNode:
     """Узел дерева MCTS для OFC Pineapple с RAVE."""
     def __init__(self, game_state: GameState, parent: Optional['MCTSNode'] = None, action: Optional[Any] = None):
         self.game_state: GameState = game_state
         self.parent: Optional['MCTSNode'] = parent
-        self.action: Optional[Any] = action
+        self.action: Optional[Any] = action # Действие, которое привело в этот узел
         self.children: Dict[Any, 'MCTSNode'] = {}
-        self.untried_actions: Optional[List[Any]] = None
+        self.untried_actions: Optional[List[Any]] = None # Действия, возможные ИЗ этого узла
 
         self.visits: int = 0
         # total_reward хранит сумму наград с точки зрения игрока, который СДЕЛАЛ ход, ведущий в этот узел
@@ -21,273 +25,449 @@ class MCTSNode:
 
         # RAVE / AMAF stats (для действий, ВОЗМОЖНЫХ из этого узла)
         self.rave_visits: Dict[Any, int] = {}
-        self.rave_total_reward: Dict[Any, float] = {}
+        self.rave_total_reward: Dict[Any, float] = {} # Сумма наград с точки зрения игрока, который ходит ИЗ этого узла
+
+    def _get_player_to_move(self) -> int:
+         """Определяет индекс игрока, который должен ходить из текущего состояния."""
+         gs = self.game_state
+         player_to_move = -1
+         if gs.is_fantasyland_round:
+              for i in range(gs.NUM_PLAYERS):
+                   if gs.fantasyland_status[i] and not gs._player_finished_round[i]:
+                        player_to_move = i; break
+              if player_to_move == -1:
+                   for i in range(gs.NUM_PLAYERS):
+                        if not gs.fantasyland_status[i] and not gs._player_finished_round[i] and gs.current_hands.get(i):
+                             player_to_move = i; break
+              if player_to_move == -1: player_to_move = gs.current_player_idx # Фоллбэк
+         else:
+              player_to_move = gs.current_player_idx
+
+         # Если все еще -1, возможно раунд закончен или ошибка
+         if player_to_move == -1 and not gs.is_round_over():
+              print(f"Warning: _get_player_to_move returned -1 for non-terminal state.")
+              # Возвращаем 0 по умолчанию в случае ошибки
+              return 0
+         elif gs.is_round_over():
+              return -1 # Нет ходящего в терминальном состоянии
+         else:
+              return player_to_move
+
 
     def expand(self) -> Optional['MCTSNode']:
-        """Расширяет узел, выбирая одно неиспробованное действие."""
+        """
+        Расширяет узел, выбирая одно неиспробованное действие.
+        Возвращает новый дочерний узел или None, если нет действий для расширения.
+        """
+        player_to_move = self._get_player_to_move()
+        if player_to_move == -1: return None # Терминальный узел
+
+        # Инициализируем действия, если нужно
         if self.untried_actions is None:
-             self.untried_actions = self.game_state.get_legal_actions()
+             self.untried_actions = self.game_state.get_legal_actions_for_player(player_to_move)
              random.shuffle(self.untried_actions)
+             # Инициализация RAVE
+             for act in self.untried_actions:
+                 if act not in self.rave_visits:
+                     self.rave_visits[act] = 0
+                     self.rave_total_reward[act] = 0.0
 
         if not self.untried_actions:
-             return None
+             return None # Нечего расширять
 
         action = self.untried_actions.pop()
-        next_state = self.game_state.apply_action(action) # apply_action обрабатывает все типы ходов
+
+        # --- Применяем действие ---
+        next_state = None
+        # ФЛ ход не должен обрабатываться через expand, т.к. он детерминирован солвером
+        if self.game_state.is_fantasyland_round and self.game_state.fantasyland_status[player_to_move]:
+             print(f"Warning: expand called for Fantasyland player {player_to_move}. This should not happen.")
+             return None
+        else:
+             # Обычное действие
+             try:
+                  # Применяем действие для игрока player_to_move
+                  next_state = self.game_state.apply_action(player_to_move, action)
+             except Exception as e:
+                  print(f"Error applying action during expand for player {player_to_move}: {e}")
+                  # print(f"Action: {action}") # Отладка действия
+                  return None
+
+        if next_state is None: return None
+
+        # Создаем дочерний узел
         child_node = MCTSNode(next_state, parent=self, action=action)
         self.children[action] = child_node
-
-        # Инициализируем RAVE для действий ИЗ нового дочернего узла
-        child_actions = child_node.game_state.get_legal_actions()
-        for act in child_actions:
-            child_node.rave_visits[act] = 0
-            child_node.rave_total_reward[act] = 0.0
 
         return child_node
 
     def is_terminal(self) -> bool:
+        """Проверяет, завершен ли раунд в состоянии этого узла."""
         return self.game_state.is_round_over()
 
-    def rollout(self) -> Tuple[float, Set[Any]]:
-        """Симуляция до конца раунда. Возвращает счет и набор действий симуляции."""
+    def rollout(self, perspective_player: int = 0) -> Tuple[float, Set[Any]]:
+        """
+        Симуляция до конца раунда из текущего состояния узла.
+        Возвращает счет (с точки зрения perspective_player) и набор действий симуляции.
+        """
         current_rollout_state = self.game_state.copy()
         simulation_actions_set = set()
-        
-        # Обработка начального состояния ФЛ, если узел соответствует ему
-        player_idx_rollout = current_rollout_state.current_player_idx
-        if current_rollout_state.is_fantasyland_round and \
-           current_rollout_state.fantasyland_status[player_idx_rollout] and \
-           current_rollout_state.fantasyland_hands[player_idx_rollout]:
-            hand = current_rollout_state.fantasyland_hands[player_idx_rollout]
-            if hand:
-                placement, discarded = self._heuristic_fantasyland_placement(hand)
-                if placement:
-                    current_rollout_state.apply_fantasyland_placement(player_idx_rollout, placement, discarded)
-                    # Не добавляем "мета-действие" ФЛ в RAVE, т.к. оно уникально
-                else: # Фол
-                    current_rollout_state.boards[player_idx_rollout].is_foul = True
-                    current_rollout_state._player_acted_this_street[player_idx_rollout] = True
-                    current_rollout_state.fantasyland_hands[player_idx_rollout] = None
-                    # Передаем ход, если нужно
-                    if not all(current_rollout_state._player_acted_this_street):
-                         current_rollout_state.current_player_idx = 1 - player_idx_rollout
-                         if not current_rollout_state.fantasyland_status[current_rollout_state.current_player_idx]:
-                              current_rollout_state._deal_street()
+        MAX_ROLLOUT_STEPS = 50 # Защита от бесконечного цикла
+        steps = 0
 
-        # Основной цикл симуляции
-        while not current_rollout_state.is_round_over():
-            player_idx_rollout = current_rollout_state.current_player_idx
+        # Цикл до конца раунда или лимита шагов
+        while not current_rollout_state.is_round_over() and steps < MAX_ROLLOUT_STEPS:
+            steps += 1
+            made_move_this_iter = False
+            player_acted_in_iter = -1 # Кто сходил в этой итерации
 
-            # Обработка ФЛ хода внутри цикла
-            if current_rollout_state.is_fantasyland_round and current_rollout_state.fantasyland_status[player_idx_rollout]:
-                 hand = current_rollout_state.fantasyland_hands[player_idx_rollout]
-                 if hand:
-                     placement, discarded = self._heuristic_fantasyland_placement(hand)
-                     if placement:
-                          current_rollout_state.apply_fantasyland_placement(player_idx_rollout, placement, discarded)
-                     else: # Фол
-                          current_rollout_state.boards[player_idx_rollout].is_foul = True
-                          current_rollout_state._player_acted_this_street[player_idx_rollout] = True
-                          current_rollout_state.fantasyland_hands[player_idx_rollout] = None
-                          if not all(current_rollout_state._player_acted_this_street):
-                               current_rollout_state.current_player_idx = 1 - player_idx_rollout
-                               if not current_rollout_state.fantasyland_status[current_rollout_state.current_player_idx]:
-                                    current_rollout_state._deal_street()
-                     continue # К следующей итерации while
-                 else: # Руки нет, но раунд не закончен? Ошибка или ждем другого игрока
-                      if not all(current_rollout_state._player_acted_this_street):
-                           current_rollout_state.current_player_idx = 1 - player_idx_rollout
-                           if not current_rollout_state.fantasyland_status[current_rollout_state.current_player_idx]:
-                                current_rollout_state._deal_street()
-                           continue
-                      else: # Все сходили, раунд должен быть закончен
-                           break
+            # Определяем, кто должен ходить сейчас
+            player_to_act_rollout = -1
+            gs_rollout = current_rollout_state
+            if gs_rollout.is_fantasyland_round:
+                 for i in range(gs_rollout.NUM_PLAYERS):
+                      if gs_rollout.fantasyland_status[i] and not gs_rollout._player_finished_round[i]:
+                           player_to_act_rollout = i; break
+                 if player_to_act_rollout == -1:
+                      for i in range(gs_rollout.NUM_PLAYERS):
+                           if not gs_rollout.fantasyland_status[i] and not gs_rollout._player_finished_round[i] and gs_rollout.current_hands.get(i):
+                                player_to_act_rollout = i; break
+                 if player_to_act_rollout == -1: player_to_act_rollout = gs_rollout.current_player_idx
+            else:
+                 player_to_act_rollout = gs_rollout.current_player_idx
+
+            # Если не смогли определить или игрок закончил, пытаемся раздать карты
+            if player_to_act_rollout == -1 or current_rollout_state._player_finished_round[player_to_act_rollout]:
+                 pass # Логика раздачи будет ниже
+            else:
+                # --- Получаем и применяем действие ---
+                action = None
+                is_fl_placement = current_rollout_state.is_fantasyland_round and current_rollout_state.fantasyland_status[player_to_act_rollout]
+
+                if is_fl_placement:
+                    hand = current_rollout_state.fantasyland_hands[player_to_act_rollout]
+                    if hand:
+                        placement, discarded = self._heuristic_fantasyland_placement(hand)
+                        if placement:
+                            current_rollout_state = current_rollout_state.apply_fantasyland_placement(player_to_act_rollout, placement, discarded)
+                        else: # Фол
+                            current_rollout_state = current_rollout_state.apply_fantasyland_foul(player_to_act_rollout, hand)
+                        made_move_this_iter = True
+                        player_acted_in_iter = player_to_act_rollout
+                else: # Обычный ход
+                    hand = current_rollout_state.current_hands.get(player_to_act_rollout)
+                    if hand: # Если есть карты для хода
+                        possible_moves = current_rollout_state.get_legal_actions_for_player(player_to_act_rollout)
+                        if possible_moves:
+                            action = self._heuristic_rollout_policy(current_rollout_state, player_to_act_rollout, possible_moves)
+                            if action:
+                                 simulation_actions_set.add(action)
+                                 current_rollout_state = current_rollout_state.apply_action(player_to_act_rollout, action)
+                                 made_move_this_iter = True
+                                 player_acted_in_iter = player_to_act_rollout
+                            else: # Фол эвристики
+                                 current_rollout_state.boards[player_to_act_rollout].is_foul = True
+                                 current_rollout_state._player_finished_round[player_to_act_rollout] = True
+                                 current_rollout_state.current_hands[player_to_act_rollout] = None
+                                 made_move_this_iter = True
+                                 player_acted_in_iter = player_to_act_rollout
+                        else: # Нет легальных ходов -> фол
+                             current_rollout_state.boards[player_to_act_rollout].is_foul = True
+                             current_rollout_state._player_finished_round[player_to_act_rollout] = True
+                             current_rollout_state.current_hands[player_to_act_rollout] = None
+                             made_move_this_iter = True
+                             player_acted_in_iter = player_to_act_rollout
+
+            # --- Логика перехода улицы / раздачи карт в симуляции ---
+            if not current_rollout_state.is_round_over():
+                 needs_dealing = False
+                 # Переход улицы в обычном раунде
+                 if not current_rollout_state.is_fantasyland_round and all(current_rollout_state._player_acted_this_street):
+                      current_rollout_state.street += 1
+                      if current_rollout_state.street <= 5:
+                           current_rollout_state._player_acted_this_street = [False] * current_rollout_state.NUM_PLAYERS
+                           current_rollout_state.current_player_idx = 1 - current_rollout_state.dealer_idx
+                           needs_dealing = True # Нужно раздать первому игроку новой улицы
+                      # else: Раунд закончится
+
+                 # Передача хода в обычном раунде (если улица не сменилась)
+                 elif not current_rollout_state.is_fantasyland_round and made_move_this_iter and player_acted_in_iter != -1:
+                      next_player = 1 - player_acted_in_iter # Передаем ход оппоненту
+                      # Если оппонент еще не ходил на этой улице и не закончил раунд
+                      if not current_rollout_state._player_acted_this_street[next_player] and not current_rollout_state._player_finished_round[next_player]:
+                           current_rollout_state.current_player_idx = next_player
+                           if current_rollout_state.current_hands.get(next_player) is None:
+                                needs_dealing = True # Нужно раздать оппоненту
+
+                 # Раздача карт (если нужно)
+                 if needs_dealing or current_rollout_state.is_fantasyland_round:
+                      player_to_deal = -1
+                      if needs_dealing and not current_rollout_state.is_fantasyland_round:
+                           # Раздаем тому, чья очередь, если у него нет карт
+                           p_idx = current_rollout_state.current_player_idx
+                           if not current_rollout_state._player_finished_round[p_idx] and current_rollout_state.current_hands.get(p_idx) is None:
+                                player_to_deal = p_idx
+                      elif current_rollout_state.is_fantasyland_round:
+                           # Ищем не-ФЛ игрока без карт, который не закончил
+                           for p_idx_deal in range(current_rollout_state.NUM_PLAYERS):
+                                if not current_rollout_state.fantasyland_status[p_idx_deal] and \
+                                   not current_rollout_state._player_finished_round[p_idx_deal] and \
+                                   current_rollout_state.current_hands.get(p_idx_deal) is None:
+                                        player_to_deal = p_idx_deal
+                                        break
+                      # Раздаем, если нашли кому
+                      if player_to_deal != -1:
+                           current_rollout_state._deal_street_to_player(player_to_deal)
 
 
-            # Обычный ход
-            possible_moves = current_rollout_state.get_legal_actions()
-            if not possible_moves: break
+            # Если за итерацию не было сделано ни одного хода и раунд не закончен
+            if not current_rollout_state.is_round_over() and not made_move_this_iter and steps > 1:
+                 # print("Rollout Warning: No move made in iteration, breaking.")
+                 break # Прерываем, чтобы избежать зацикливания
 
-            action = self._heuristic_rollout_policy(current_rollout_state, possible_moves)
-            simulation_actions_set.add(action)
-            current_rollout_state = current_rollout_state.apply_action(action)
+        if steps >= MAX_ROLLOUT_STEPS:
+             # print("Rollout Warning: Max steps reached.")
+             pass # Считаем текущее состояние как терминальное
 
-        final_score = current_rollout_state.get_terminal_score()
-        return float(final_score), simulation_actions_set
+        # Подсчет финального счета
+        final_score_p0 = current_rollout_state.get_terminal_score()
 
-    def _heuristic_rollout_policy(self, state: GameState, actions: List[Any]) -> Any:
-        """Эвристика для выбора хода в симуляции."""
+        # Возвращаем счет с точки зрения perspective_player
+        if perspective_player == 0:
+            return float(final_score_p0), simulation_actions_set
+        elif perspective_player == 1:
+            return float(-final_score_p0), simulation_actions_set
+        else:
+            # Если perspective_player не 0 или 1, возвращаем 0
+            return 0.0, simulation_actions_set
+
+    def _heuristic_rollout_policy(self, state: GameState, player_idx: int, actions: List[Any]) -> Optional[Any]:
+        """Улучшенная эвристика для выбора хода в симуляции."""
+        if not actions: return None
+
+        # --- Улица 1 ---
         if state.street == 1:
-            # Для первой улицы берем случайное из сгенерированных (если они есть)
-            return random.choice(actions) if actions else None
+            best_action = None
+            best_score = -float('inf')
+            num_actions_to_check = min(len(actions), 50)
+            actions_sample = random.sample(actions, num_actions_to_check)
 
-        # Улицы 2-5
-        hand = state.cards_dealt_current_street
-        if not hand or len(hand) != 3: return random.choice(actions) if actions else None
+            for action in actions_sample:
+                placements, _ = action
+                score = 0
+                temp_board = state.boards[player_idx].copy()
+                valid = True
+                for card, row, index in placements:
+                     if not temp_board.add_card(card, row, index):
+                          valid = False; break
+                if not valid: continue
+
+                # Оценка
+                score += temp_board.get_total_royalty() * 0.1 # Потенциальные роялти
+                for r_name in temp_board.ROW_NAMES: # Сила карт
+                     row_cards = temp_board.get_row_cards(r_name)
+                     if not row_cards: continue
+                     rank_sum = sum(c.int_rank for c in row_cards)
+                     avg_rank = rank_sum / len(row_cards)
+                     if r_name == 'top': score += avg_rank * 0.5
+                     elif r_name == 'middle': score += avg_rank * 0.8
+                     else: score += avg_rank * 1.0
+                     if r_name == 'top' and avg_rank > 9: score -= (avg_rank - 9) * 2
+                     if r_name == 'middle' and avg_rank > 11: score -= (avg_rank - 11)
+
+                rank_t = temp_board._get_rank('top') # Риск фола
+                rank_m = temp_board._get_rank('middle')
+                rank_b = temp_board._get_rank('bottom')
+                if rank_m < rank_b - 500: score -= 20
+                if rank_t < rank_m - 500: score -= 20
+
+                score += random.uniform(-0.1, 0.1) # Случайность
+
+                if score > best_score:
+                    best_score = score
+                    best_action = action
+            return best_action if best_action else random.choice(actions)
+
+        # --- Улицы 2-5 (Pineapple) ---
+        hand = state.current_hands.get(player_idx)
+        if not hand or len(hand) != 3: return random.choice(actions)
 
         best_action = None
         best_score = -float('inf')
-        
-        current_board = state.get_current_player_board()
+        current_board = state.boards[player_idx]
+        num_actions_to_check = min(len(actions), 100)
+        actions_sample = random.sample(actions, num_actions_to_check)
 
-        # Пытаемся найти "лучший" ход по простой оценке
-        for action in actions:
+        for action in actions_sample:
             place1, place2, discarded = action
             card1, row1, idx1 = place1
             card2, row2, idx2 = place2
-            
-            # Оценка хода
             score = 0
-            
-            # 1. Оценка сброшенной карты (чем ниже, тем лучше сбросить)
-            score -= discarded.int_rank * 0.1 # Небольшой вес
+            score -= discarded.int_rank * 0.5 # Оценка сброса
 
-            # 2. Бонусы за размещение
-            def placement_bonus(card, row, board):
+            # Оценка размещения
+            def placement_score(card, row, index, board):
                 b = 0
-                # Бонус за пару/сет
-                current_row_cards = board.get_row_cards(row)
-                for c in current_row_cards:
-                    if c.int_rank == card.int_rank: b += 5
-                # Бонус за ФЛ (QQ+ на топ)
-                if row == 'top' and card.int_rank >= 12: b += 10
-                # Штраф за мусор на топе
-                if row == 'top' and card.int_rank < 7: b -= 3
-                # Бонус за коннекторы/масть (упрощенно)
-                for c in current_row_cards:
-                    if abs(c.int_rank - card.int_rank) <= 2: b += 0.5
-                    if c.int_suit == card.int_suit: b += 1
+                temp_board_eval = board.copy()
+                if not temp_board_eval.add_card(card, row, index): return -1000
+
+                current_row_cards = temp_board_eval.get_row_cards(row)
+                rank_counts = Counter(c.int_rank for c in current_row_cards)
+                card_rank_count = rank_counts.get(card.int_rank, 0)
+
+                if card_rank_count == 2: b += 5
+                if card_rank_count == 3: b += 15
+                if card_rank_count == 4: b += 30
+
+                suits = {c.int_suit for c in current_row_cards}
+                ranks = sorted([c.int_rank for c in current_row_cards])
+                if len(suits) == 1 and len(current_row_cards) >= 3: b += len(current_row_cards)
+                # ... (проверка стрита) ...
+
+                if row == 'top':
+                     if card.int_rank >= 12: b += 10
+                     if card_rank_count == 2 and card.int_rank >= 6: b += 5
+                     if card_rank_count == 3: b += 15
+                     if card.int_rank < 6: b -= 5
+                elif row == 'middle':
+                     if card.int_rank < 5: b -= 3
+
+                # Риск фола
+                rank_t = temp_board_eval._get_rank('top')
+                rank_m = temp_board_eval._get_rank('middle')
+                rank_b = temp_board_eval._get_rank('bottom')
+                if rank_m < rank_b - 500: b -= 10
+                if rank_t < rank_m - 500: b -= 10
+
                 return b
 
-            score += placement_bonus(card1, row1, current_board)
-            score += placement_bonus(card2, row2, current_board)
-            
-            # 3. Штраф за потенциальный фол (очень грубо)
-            # Если кладем на мидл карту старше чем на боттоме, или на топ старше мидла
-            # Это очень неточно, т.к. руки не полные
-            # TODO: Можно добавить более умную проверку на фол-риск
+            temp_board1 = current_board.copy()
+            if not temp_board1.add_card(card1, row1, idx1): continue
 
-            # Добавляем случайность
-            score += random.uniform(-0.5, 0.5)
+            score1 = placement_score(card1, row1, idx1, current_board)
+            score2 = placement_score(card2, row2, idx2, temp_board1)
+
+            score += score1 + score2
+            score += random.uniform(-0.1, 0.1)
 
             if score > best_score:
                 best_score = score
                 best_action = action
 
-        return best_action if best_action else random.choice(actions) # Возвращаем лучший или случайный
+        return best_action if best_action else random.choice(actions)
 
     def _heuristic_fantasyland_placement(self, hand: List[Card]) -> Tuple[Optional[Dict[str, List[Card]]], Optional[List[Card]]]:
-         """Быстрая эвристика для ФЛ в симуляции."""
-         solver = FantasylandSolver()
-         n_cards = len(hand)
-         n_place = 13
-         if n_cards < n_place: return None, None
-         n_discard = n_cards - n_place
+        """Быстрая эвристика для ФЛ в симуляции."""
+        solver = FantasylandSolver()
+        n_cards = len(hand)
+        n_place = 13
+        if n_cards < n_place: return None, None
+        n_discard = n_cards - n_place
 
-         # Пробуем сбросить N самых низких карт
-         sorted_hand = sorted(hand, key=lambda c: c.int_rank)
-         discarded_list = sorted_hand[:n_discard]
-         remaining = sorted_hand[n_discard:]
-         
-         placement = solver._try_maximize_royalty_heuristic(remaining)
-         
-         # Если первая попытка привела к фолу, пробуем сбросить другие карты (случайно)
-         if not placement:
+        try:
+             sorted_hand = sorted(hand, key=lambda c: c.int_rank)
+        except AttributeError as e:
+             print(f"Error sorting FL hand in heuristic: {e}. Hand: {[str(c) for c in hand]}")
+             return None, None
+
+        discarded_list = sorted_hand[:n_discard]
+        remaining = sorted_hand[n_discard:]
+        if len(remaining) != 13: return None, None
+
+        placement = solver._try_maximize_royalty_heuristic(remaining)
+
+        if not placement:
               discard_combinations = list(combinations(hand, n_discard))
               if discard_combinations:
-                   discarded_list = list(random.choice(discard_combinations))
-                   remaining = [c for c in hand if c not in discarded_list]
-                   if len(remaining) == 13:
-                        placement = solver._try_maximize_royalty_heuristic(remaining)
+                   discarded_list_alt = list(random.choice(discard_combinations))
+                   remaining_alt = [c for c in hand if c not in discarded_list_alt]
+                   if len(remaining_alt) == 13:
+                        placement = solver._try_maximize_royalty_heuristic(remaining_alt)
+                        if placement: discarded_list = discarded_list_alt
 
-         return placement, discarded_list if placement else None
+        return placement, discarded_list if placement else None
 
 
-    def update_stats(self, reward: float, simulation_actions: Set[Any]):
-        """Обновляет статистику узла и RAVE."""
-        self.visits += 1
-        # Награда reward - это очки с точки зрения игрока 0
-        # Обновляем total_reward с точки зрения игрока, который сделал ход СЮДА (родительский игрок)
-        if self.parent:
-            parent_player_idx = self.parent.game_state.current_player_idx
-            if parent_player_idx == 0:
-                 self.total_reward += reward
-            else:
-                 self.total_reward -= reward # Инвертируем для оппонента
+    def get_q_value(self, perspective_player: int) -> float:
+        """Возвращает Q-value узла с точки зрения указанного игрока."""
+        if self.visits == 0: return 0.0
+        # Игрок, который сделал ход СЮДА
+        player_who_acted = self.parent._get_player_to_move() if self.parent else -1
+        raw_q = self.total_reward / self.visits
+        if player_who_acted == perspective_player: return raw_q
+        elif player_who_acted != -1: return -raw_q
+        else: return raw_q # Корень
 
-            # RAVE Update (Обновляем RAVE в РОДИТЕЛЕ для действий, сделанных в симуляции)
-            possible_parent_actions = self.parent.children.keys()
-            relevant_sim_actions = simulation_actions.intersection(possible_parent_actions)
+    def get_rave_q_value(self, action: Any, perspective_player: int) -> float:
+         """Возвращает RAVE Q-value для действия из этого узла с точки зрения указанного игрока."""
+         rave_visits = self.rave_visits.get(action, 0)
+         if rave_visits == 0: return 0.0
+         rave_reward = self.rave_total_reward.get(action, 0.0)
+         raw_rave_q = rave_reward / rave_visits
+         # Игрок, который ходит ИЗ этого узла
+         player_to_move = self._get_player_to_move()
+         if player_to_move == -1: return 0.0 # Терминальный узел
 
-            for action in relevant_sim_actions:
-                 if action in self.parent.rave_visits:
-                     self.parent.rave_visits[action] += 1
-                     # RAVE награда обновляется с точки зрения игрока, который ходил в РОДИТЕЛЕ
-                     if parent_player_idx == 0:
-                          self.parent.rave_total_reward[action] += reward
-                     else:
-                          self.parent.rave_total_reward[action] -= reward
-                 # else: # Ошибка инициализации RAVE?
-                 #    print(f"Warning: Action {action} not found in parent's rave_visits during RAVE update.")
+         if player_to_move == perspective_player: return raw_rave_q
+         else: return -raw_rave_q
 
 
     def uct_select_child(self, exploration_constant: float, rave_k: float) -> Optional['MCTSNode']:
         """Выбирает лучший дочерний узел по UCB1-RAVE."""
         best_score = -float('inf')
         best_child = None
+        # Игрок, который делает выбор (ходит из ТЕКУЩЕГО узла self)
+        current_player_perspective = self._get_player_to_move()
+        if current_player_perspective == -1: # Терминальный узел
+             return None
 
-        current_player_perspective = self.game_state.current_player_idx
+        parent_visits = self.visits if self.visits > 0 else 1
 
-        # Инициализация RAVE, если нужно (для действий из ТЕКУЩЕГО узла)
-        if not self.rave_visits and self.children:
-             for action in self.children.keys():
-                 self.rave_visits[action] = 0
-                 self.rave_total_reward[action] = 0.0
+        # Используем items() для итерации по действиям и дочерним узлам
+        children_items = list(self.children.items())
+        if not children_items: return None # Нет детей для выбора
 
-        for action, child in self.children.items():
-            if child.visits == 0:
-                # First Play Urgency (FPU) с использованием RAVE
-                rave_visits = self.rave_visits.get(action, 0)
-                if rave_visits > 0:
-                    # Используем RAVE оценку как начальную эвристику
-                    rave_q = self.rave_total_reward.get(action, 0.0) / rave_visits
-                    # Корректируем RAVE оценку на перспективу текущего игрока
-                    if current_player_perspective != 0: rave_q = -rave_q
-                    score = rave_q + exploration_constant * math.sqrt(math.log(self.visits + 1) / (rave_visits + 1))
+        for action, child in children_items:
+            child_visits = child.visits
+            rave_visits = self.rave_visits.get(action, 0)
+            score = -float('inf')
+
+            if child_visits == 0:
+                if rave_visits > 0 and rave_k > 0:
+                    rave_q = self.get_rave_q_value(action, current_player_perspective)
+                    # Добавляем exploration к RAVE для FPU
+                    score = rave_q + exploration_constant * math.sqrt(math.log(parent_visits + 1e-6) / (rave_visits + 1e-6)) # Добавим epsilon
                 else:
-                    score = float('inf') # Стандартный UCB для неисследованных
+                    score = float('inf') # FPU
             else:
-                # UCB1 part (с точки зрения игрока, который будет ходить ИЗ child)
-                # total_reward в child уже с точки зрения игрока, сделавшего ход В child
-                # Нам нужна оценка с точки зрения игрока, который будет ходить ИЗ child
-                q_child_perspective = child.total_reward / child.visits
-                # Если игрок в child (тот, кто будет ходить) не совпадает с текущим игроком (кто выбирает), инвертируем Q
-                if child.game_state.current_player_idx != current_player_perspective:
-                     q_child_perspective = -q_child_perspective
-
-                exploit_term = q_child_perspective
-                explore_term = exploration_constant * math.sqrt(math.log(self.visits) / child.visits)
+                q_child = child.get_q_value(current_player_perspective)
+                exploit_term = q_child
+                explore_term = exploration_constant * math.sqrt(math.log(parent_visits) / child_visits)
                 ucb1_score = exploit_term + explore_term
 
-                # RAVE part (с точки зрения игрока, который ходит СЕЙЧАС в self)
-                rave_visits = self.rave_visits.get(action, 0)
-                if rave_visits > 0:
-                    rave_q_parent_perspective = self.rave_total_reward.get(action, 0.0) / rave_visits
-                    # Корректируем RAVE оценку на перспективу текущего игрока
-                    if current_player_perspective != 0: rave_q_parent_perspective = -rave_q_parent_perspective
-                    
-                    rave_exploit_term = rave_q_parent_perspective
-                    beta = math.sqrt(rave_k / (3 * self.visits + rave_k))
-                    score = (1 - beta) * ucb1_score + beta * rave_exploit_term
+                if rave_visits > 0 and rave_k > 0:
+                    rave_q = self.get_rave_q_value(action, current_player_perspective)
+                    beta = math.sqrt(rave_k / (3 * parent_visits + rave_k))
+                    score = (1 - beta) * ucb1_score + beta * rave_q
                 else:
                     score = ucb1_score
 
             if score > best_score:
                 best_score = score
                 best_child = child
+            elif score == best_score and score != float('inf') and score != -float('inf'):
+                 if random.choice([True, False]):
+                      best_child = child
+
+        # Если best_child все еще None (например, все дети имели -inf), выбираем случайного
+        if best_child is None and children_items:
+             best_child = random.choice([child for _, child in children_items])
+
 
         return best_child
 
     def __repr__(self):
-        player = self.game_state.current_player_idx
-        return f"[P{player} V={self.visits} Q={self.total_reward:.2f} N_Act={len(self.children)}]"
+        player_idx = self._get_player_to_move()
+        player = f'P{player_idx}' if player_idx != -1 else 'T'
+        q_val_p0 = self.get_q_value(0)
+        return f"[{player} V={self.visits} Q0={q_val_p0:.2f} N_Act={len(self.children)} U_Act={len(self.untried_actions or [])}]"
