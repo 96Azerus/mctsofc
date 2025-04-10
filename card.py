@@ -3,8 +3,9 @@
 Определяет класс Card, наследуя от phevaluator.Card для совместимости,
 и добавляет необходимые методы и атрибуты для игры.
 """
+from typing import Optional # <--- ДОБАВИТЬ ЭТОТ ИМПОРТ
 from phevaluator import Card as PhevaluatorCard
-from phevaluator import evaluate_cards as evaluate_cards_phevaluator # Импортируем функцию оценки
+from phevaluator import evaluate_cards as evaluate_cards_phevaluator
 
 class Card(PhevaluatorCard):
     """
@@ -56,7 +57,7 @@ def card_from_str(s: str) -> Card:
         raise ValueError(f"Invalid card string: '{s}'")
     return Card(s)
 
-def card_to_str(c: Optional[Card]) -> str:
+def card_to_str(c: Optional[Card]) -> str: # <-- Теперь Optional известен
     """Конвертирует карту в строку или '__' если None."""
     return str(c) if c else "__"
 
