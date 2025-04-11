@@ -13,25 +13,24 @@ COPY requirements.txt requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Создаем пользователя без root-прав
-RUN useradd --create-home appuser
-WORKDIR /home/appuser/app # Устанавливаем рабочую директорию для пользователя
-USER appuser # Переключаемся на пользователя
+# --- ИЗМЕНЕНИЕ: Используем adduser и добавляем проверку ---
+# Создаем пользователя без пароля и лишних вопросов, затем проверяем его существование
+RUN adduser --disabled-password --gecos "" appuser && id appuser
 
-# Копируем код приложения в контейнер (уже в директорию пользователя)
-# Убедимся, что права доступа позволяют пользователю читать файлы
-COPY --chown=appuser:appuser . .
+# Устанавливаем рабочую директорию для пользователя (можно оставить /app, если права позволяют)
+# WORKDIR /home/appuser/app # Можно закомментировать или оставить /app
+# Переключаемся на пользователя
+USER appuser
+
+# Копируем код приложения в контейнер
+# Права должны быть ОК, так как копируем ПОСЛЕ создания пользователя
+# Но WORKDIR теперь /app, поэтому копируем в /app
+COPY --chown=appuser:appuser . /app
 
 # Указываем Flask, где искать приложение
 ENV FLASK_APP=app.py
 # Указываем порт по умолчанию, если $PORT не установлен (Render его установит)
 ENV PORT=8080
-# УБРАН ENV FLASK_SECRET_KEY='default_secret_key_change_me'
-# Приложение должно получать FLASK_SECRET_KEY из переменных окружения при запуске
-
-# Открываем порт, который будет слушать Gunicorn (Render использует переменную $PORT)
-# EXPOSE директива больше для документации, Gunicorn будет слушать порт из CMD
-# EXPOSE ${PORT} # Можно оставить или убрать
 
 # Команда для запуска приложения с использованием Gunicorn (shell form)
 # Оболочка подставит значение переменной $PORT
