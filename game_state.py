@@ -5,6 +5,7 @@ OFC Pineapple для двух игроков.
 """
 import copy
 import random
+import sys # Добавлено для flush
 from itertools import combinations, permutations
 from typing import List, Tuple, Optional, Set, Dict, Any
 
@@ -97,13 +98,19 @@ class GameState:
         num_cards = 5 if self.street == 1 else 3
         try:
             dealt_cards = self.deck.deal(num_cards)
+            # --- ДОБАВЛЕНО ЛОГИРОВАНИЕ ---
+            print(f"DEBUG: Dealt street cards for player {player_idx}, street {self.street}: {[str(c) for c in dealt_cards]}")
+            sys.stdout.flush(); sys.stderr.flush()
+            # -----------------------------
             self.current_hands[player_idx] = dealt_cards
             # Сбрасываем флаг действия на улице для этого игрока
             self._player_acted_this_street[player_idx] = False
-        except ValueError:
-            print(f"Error dealing street {self.street} to player {player_idx}: Not enough cards.")
+        except ValueError as e: # Ловим конкретную ошибку нехватки карт
+            print(f"Error dealing street {self.street} to player {player_idx}: {e}")
+            sys.stdout.flush(); sys.stderr.flush()
             self.current_hands[player_idx] = [] # Пустая рука в случае ошибки
             # Возможно, нужно пометить игрока как закончившего или обработать иначе
+            # self._player_finished_round[player_idx] = True # Например так?
 
     def _deal_fantasyland_hands(self):
         """Раздает N карт игрокам в статусе Фантазии."""
@@ -112,9 +119,15 @@ class GameState:
                 num_cards = self.fantasyland_cards_to_deal[i]
                 if num_cards == 0: num_cards = 14 # Стандарт по умолчанию
                 try:
-                    self.fantasyland_hands[i] = self.deck.deal(num_cards)
-                except ValueError:
-                    print(f"Error dealing Fantasyland to player {i}: Not enough cards.")
+                    dealt_cards = self.deck.deal(num_cards)
+                    # --- ДОБАВЛЕНО ЛОГИРОВАНИЕ ---
+                    print(f"DEBUG: Dealt fantasyland hand for player {i} ({num_cards} cards): {[str(c) for c in dealt_cards]}")
+                    sys.stdout.flush(); sys.stderr.flush()
+                    # -----------------------------
+                    self.fantasyland_hands[i] = dealt_cards
+                except ValueError as e: # Ловим конкретную ошибку нехватки карт
+                    print(f"Error dealing Fantasyland to player {i}: {e}")
+                    sys.stdout.flush(); sys.stderr.flush()
                     self.fantasyland_hands[i] = []
                     # Если не хватило карт на ФЛ, игрок не сможет сделать ход - фол?
                     # self._player_finished_round[i] = True
