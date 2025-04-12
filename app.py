@@ -20,13 +20,13 @@ try:
     print("Imported game_state")
     from board import PlayerBoard
     print("Imported board")
-    # Используем версию БЕЗ multiprocessing для диагностики
-    # >>>>>>>> ИЗМЕНЕНИЕ: Закомментирован импорт AI <<<<<<<<<<
-    # from mcts_agent import MCTSAgent
-    # print("Imported mcts_agent")
-    # from fantasyland_solver import FantasylandSolver # Он импортируется в mcts_agent
+    # >>>>>>>> ИЗМЕНЕНИЕ: Раскомментирован импорт AI <<<<<<<<<<
+    from mcts_agent import MCTSAgent
+    print("Imported mcts_agent")
+    # FantasylandSolver импортируется внутри MCTSAgent, отдельный импорт не нужен
+    # from fantasyland_solver import FantasylandSolver
     # print("Imported fantasyland_solver")
-    print("--- Imports successful (AI Agent import commented out) ---") # Изменено сообщение
+    print("--- Imports successful ---") # Убрано упоминание о комментарии
     sys.stdout.flush(); sys.stderr.flush()
 except ImportError as e:
     print(f"FATAL ERROR: Import failed: {e}")
@@ -59,38 +59,40 @@ try:
 
 
     # --- Инициализация AI ---
-    print("--- SKIPPING AI Agent Initialization (Commented Out) ---") # Изменено сообщение
+    print("--- Initializing AI Agent ---") # Убрано SKIPPING
     sys.stdout.flush(); sys.stderr.flush()
     ai_agent = None # Initialize as None
-    # >>>>>>>> ИЗМЕНЕНИЕ: Закомментирован блок инициализации AI <<<<<<<<<<
-    # try:
-    #     mcts_time_limit = int(os.environ.get('MCTS_TIME_LIMIT_MS', 5000))
-    #     mcts_rave_k = int(os.environ.get('MCTS_RAVE_K', 500))
-    #     # --- ПАРАЛЛЕЛИЗАЦИЯ ВЫКЛЮЧЕНА ДЛЯ ДИАГНОСТИКИ ---
-    #     # mcts_workers = 1
-    #     # mcts_rollouts_leaf = 1
-    #     print(f"AI Params: TimeLimit={mcts_time_limit}, RaveK={mcts_rave_k} (Single-threaded)")
-    #     sys.stdout.flush(); sys.stderr.flush()
+    # >>>>>>>> ИЗМЕНЕНИЕ: Раскомментирован блок инициализации AI <<<<<<<<<<
+    try:
+        # Используем значения по умолчанию или из переменных окружения
+        mcts_time_limit = int(os.environ.get('MCTS_TIME_LIMIT_MS', 5000)) # 5 секунд по умолчанию
+        mcts_rave_k = int(os.environ.get('MCTS_RAVE_K', 500))
+        # Для теста в Codespace можно оставить 1 воркер или попробовать больше, если машина мощная
+        mcts_workers = int(os.environ.get('NUM_WORKERS', 1)) # Начнем с 1 воркера для простоты
+        mcts_rollouts_leaf = int(os.environ.get('ROLLOUTS_PER_LEAF', 4))
 
-    #     # Используем конструктор БЕЗ параметров параллелизации
-    #     ai_agent = MCTSAgent(time_limit_ms=mcts_time_limit,
-    #                          rave_k=mcts_rave_k)
+        print(f"AI Params: TimeLimit={mcts_time_limit}ms, RaveK={mcts_rave_k}, Workers={mcts_workers}, RolloutsPerLeaf={mcts_rollouts_leaf}")
+        sys.stdout.flush(); sys.stderr.flush()
 
-    #     print("--- AI Agent Initialized Successfully ---")
-    #     sys.stdout.flush(); sys.stderr.flush()
-    # except Exception as e:
-    #     print(f"FATAL ERROR: AI Agent initialization failed: {e}")
-    #     traceback.print_exc()
-    #     sys.stdout.flush(); sys.stderr.flush()
-    #     sys.exit(1) # Exit if AI agent fails
+        # Создаем экземпляр агента
+        ai_agent = MCTSAgent(time_limit_ms=mcts_time_limit,
+                             rave_k=mcts_rave_k,
+                             num_workers=mcts_workers, # Передаем параметры
+                             rollouts_per_leaf=mcts_rollouts_leaf)
 
-    # # Check if ai_agent was successfully created
-    # if ai_agent is None:
-    #      print("FATAL ERROR: ai_agent is None after initialization block.")
-    #      sys.stdout.flush(); sys.stderr.flush()
-    #      sys.exit(1)
+        print("--- AI Agent Initialized Successfully ---")
+        sys.stdout.flush(); sys.stderr.flush()
+    except Exception as e:
+        print(f"FATAL ERROR: AI Agent initialization failed: {e}")
+        traceback.print_exc()
+        sys.stdout.flush(); sys.stderr.flush()
+        sys.exit(1) # Exit if AI agent fails
 
-    # fl_solver не нужен отдельно, т.к. используется внутри MCTSAgent
+    # Check if ai_agent was successfully created
+    if ai_agent is None:
+         print("FATAL ERROR: ai_agent is None after initialization block.")
+         sys.stdout.flush(); sys.stderr.flush()
+         sys.exit(1)
 
 except Exception as e:
      # Ловим любые другие ошибки на глобальном уровне инициализации
@@ -156,6 +158,8 @@ def get_state_for_frontend(state: GameState, player_idx: int) -> dict:
         message = "Раунд завершен! Нажмите 'Начать Раунд'."
         try:
              score = state.get_terminal_score()
+             # >>>>>>>> ИЗМЕНЕНИЕ: Корректный подсчет для AI <<<<<<<<<<
+             # Счет всегда с точки зрения игрока 0. Если мы игрок 1, инвертируем.
              if player_idx == 1: score = -score
              message += f" Счет за раунд: {score}"
         except Exception as e:
@@ -175,8 +179,8 @@ def get_state_for_frontend(state: GameState, player_idx: int) -> dict:
                   message = f"Ожидание карт (Улица {state.street})..."
                   is_waiting = True
     else:
-         # >>>>>>>> ИЗМЕНЕНИЕ: Убрано упоминание AI <<<<<<<<<<
-         message = "Ожидание завершения раунда другим игроком..."
+         # >>>>>>>> ИЗМЕНЕНИЕ: Уточнено сообщение <<<<<<<<<<
+         message = "Ожидание хода AI..." # Теперь AI есть
          is_waiting = True
 
     player_discard_count = len(state.private_discard[player_idx])
@@ -204,12 +208,10 @@ sys.stdout.flush(); sys.stderr.flush()
 
 @app.route('/')
 def index():
-    # print("Route / called") # Убрал для чистоты логов при успехе
     return render_template('index.html')
 
 @app.route('/api/game_state', methods=['GET'])
 def get_game_state_api():
-    # print("Route /api/game_state called")
     game_state = load_game_state()
     human_player_idx = 0
 
@@ -217,7 +219,6 @@ def get_game_state_api():
         dealer_idx = random.choice([0, 1])
         game_state = GameState(dealer_idx=dealer_idx)
         save_game_state(game_state)
-        # print("No game state found, created initial empty state.")
 
     try:
         frontend_state = get_state_for_frontend(game_state, human_player_idx)
@@ -226,11 +227,11 @@ def get_game_state_api():
              frontend_state["isGameOver"] = True
              frontend_state["isWaiting"] = False
              frontend_state["playerFinishedRound"] = True
-        # print("Returning game state via API")
         return jsonify(frontend_state)
     except Exception as e:
          print(f"Error preparing state for frontend API: {e}")
          traceback.print_exc()
+         # Возвращаем состояние ошибки
          return jsonify({
               "error_message": "Ошибка загрузки состояния игры.",
               "isGameOver": True, "message": "Ошибка. Обновите страницу.",
@@ -266,50 +267,52 @@ def start_game():
     print(f"New round started. Dealer: {dealer_idx}. FL Status: {game_state.fantasyland_status}")
     sys.stdout.flush(); sys.stderr.flush()
 
-    # >>>>>>>> ИЗМЕНЕНИЕ: Закомментирован блок первоначального хода AI <<<<<<<<<<
-    # ai_needs_to_act = False
-    # # ... (логика определения ai_needs_to_act как раньше) ...
-    # if game_state.is_fantasyland_round and game_state.fantasyland_status[ai_idx]:
-    #      ai_needs_to_act = game_state.fantasyland_hands[ai_idx] is not None
-    #      if ai_needs_to_act: print(f"AI Player {ai_idx} starting Fantasyland placement...")
-    # elif not game_state.is_fantasyland_round and game_state.current_player_idx == ai_idx:
-    #      ai_needs_to_act = game_state.current_hands.get(ai_idx) is not None
-    #      if ai_needs_to_act: print(f"AI Player {ai_idx} taking first turn (Street {game_state.street})...")
-    # elif game_state.is_fantasyland_round and not game_state.fantasyland_status[ai_idx]:
-    #      ai_needs_to_act = game_state.current_hands.get(ai_idx) is not None
-    #      if ai_needs_to_act: print(f"AI Player {ai_idx} taking first turn (Regular hand in FL round, Street {game_state.street})...")
+    # >>>>>>>> ИЗМЕНЕНИЕ: Раскомментирован блок первоначального хода AI <<<<<<<<<<
+    ai_needs_to_act = False
+    # Определяем, нужно ли AI ходить первым
+    if game_state.is_fantasyland_round and game_state.fantasyland_status[ai_idx]:
+         ai_needs_to_act = game_state.fantasyland_hands[ai_idx] is not None
+         if ai_needs_to_act: print(f"AI Player {ai_idx} starting Fantasyland placement...")
+    elif not game_state.is_fantasyland_round and game_state.current_player_idx == ai_idx:
+         ai_needs_to_act = game_state.current_hands.get(ai_idx) is not None
+         if ai_needs_to_act: print(f"AI Player {ai_idx} taking first turn (Street {game_state.street})...")
+    elif game_state.is_fantasyland_round and not game_state.fantasyland_status[ai_idx]: # Не-ФЛ игрок в ФЛ раунде
+         ai_needs_to_act = game_state.current_hands.get(ai_idx) is not None
+         if ai_needs_to_act: print(f"AI Player {ai_idx} taking first turn (Regular hand in FL round, Street {game_state.street})...")
 
 
-    # if ai_needs_to_act:
-    #      try:
-    #           print("Running initial AI turn...")
-    #           sys.stdout.flush(); sys.stderr.flush()
-    #           game_state = run_ai_turn(game_state, ai_idx) # <<<<<<<<<< ВЫЗОВ AI
-    #           print("Initial AI turn finished.")
-    #           sys.stdout.flush(); sys.stderr.flush()
-    #           # ... (раздача человеку после хода AI как раньше) ...
-    #           if not game_state.is_round_over() and not game_state._player_finished_round[human_player_idx]:
-    #                if not game_state.is_fantasyland_round and game_state.current_player_idx == human_player_idx and game_state.current_hands.get(human_player_idx) is None:
-    #                     game_state._deal_street_to_player(human_player_idx)
-    #                elif game_state.is_fantasyland_round and not game_state.fantasyland_status[human_player_idx] and game_state.current_hands.get(human_player_idx) is None:
-    #                     game_state._deal_street_to_player(human_player_idx)
+    if ai_needs_to_act:
+         try:
+              print("Running initial AI turn...")
+              sys.stdout.flush(); sys.stderr.flush()
+              game_state = run_ai_turn(game_state, ai_idx) # <<<<<<<<<< ВЫЗОВ AI
+              print("Initial AI turn finished.")
+              sys.stdout.flush(); sys.stderr.flush()
+              # Раздаем человеку после хода AI, если нужно
+              if not game_state.is_round_over() and not game_state._player_finished_round[human_player_idx]:
+                   if not game_state.is_fantasyland_round and game_state.current_player_idx == human_player_idx and game_state.current_hands.get(human_player_idx) is None:
+                        print(f"Dealing hand to human player {human_player_idx} after AI turn")
+                        game_state._deal_street_to_player(human_player_idx)
+                   elif game_state.is_fantasyland_round and not game_state.fantasyland_status[human_player_idx] and game_state.current_hands.get(human_player_idx) is None:
+                        print(f"Dealing hand to human player {human_player_idx} after AI turn (FL round)")
+                        game_state._deal_street_to_player(human_player_idx)
 
-    #      except Exception as e:
-    #           print(f"Error during initial AI turn: {e}")
-    #           traceback.print_exc()
-    #           sys.stdout.flush(); sys.stderr.flush()
+         except Exception as e:
+              print(f"Error during initial AI turn: {e}")
+              traceback.print_exc()
+              sys.stdout.flush(); sys.stderr.flush()
+    else:
+         # Если AI не ходил первым, раздаем человеку, если его очередь
+         if not game_state.is_round_over() and not game_state._player_finished_round[human_player_idx]:
+              if not game_state.is_fantasyland_round and game_state.current_player_idx == human_player_idx and game_state.current_hands.get(human_player_idx) is None:
+                   print(f"Dealing initial hand to human player {human_player_idx}")
+                   game_state._deal_street_to_player(human_player_idx)
+              elif game_state.is_fantasyland_round and not game_state.fantasyland_status[human_player_idx] and game_state.current_hands.get(human_player_idx) is None:
+                   print(f"Dealing initial hand to human player {human_player_idx} (FL round)")
+                   game_state._deal_street_to_player(human_player_idx)
 
-    # >>>>>>>> ИЗМЕНЕНИЕ: Раздаем карты человеку сразу, если его очередь <<<<<<<<<<
-    if not game_state.is_round_over() and not game_state._player_finished_round[human_player_idx]:
-         if not game_state.is_fantasyland_round and game_state.current_player_idx == human_player_idx and game_state.current_hands.get(human_player_idx) is None:
-              print(f"Dealing initial hand to human player {human_player_idx}")
-              game_state._deal_street_to_player(human_player_idx)
-         elif game_state.is_fantasyland_round and not game_state.fantasyland_status[human_player_idx] and game_state.current_hands.get(human_player_idx) is None:
-              print(f"Dealing initial hand to human player {human_player_idx} (FL round)")
-              game_state._deal_street_to_player(human_player_idx)
 
-
-    print("Saving state after /start (AI turn skipped)")
+    print("Saving state after /start")
     sys.stdout.flush(); sys.stderr.flush()
     save_game_state(game_state)
     frontend_state = get_state_for_frontend(game_state, human_player_idx)
@@ -317,66 +320,85 @@ def start_game():
     sys.stdout.flush(); sys.stderr.flush()
     return jsonify(frontend_state)
 
-# >>>>>>>> ИЗМЕНЕНИЕ: Закомментирована функция run_ai_turn <<<<<<<<<<
-# def run_ai_turn(current_game_state: GameState, ai_player_index: int) -> GameState:
-#     """
-#     Выполняет ОДИН ход AI (или полное размещение ФЛ).
-#     Возвращает НОВОЕ состояние игры после хода AI.
-#     """
-#     state = current_game_state
-#     if state._player_finished_round[ai_player_index]:
-#         return state
+# >>>>>>>> ИЗМЕНЕНИЕ: Раскомментирована функция run_ai_turn <<<<<<<<<<
+def run_ai_turn(current_game_state: GameState, ai_player_index: int) -> GameState:
+    """
+    Выполняет ОДИН ход AI (или полное размещение ФЛ).
+    Возвращает НОВОЕ состояние игры после хода AI.
+    """
+    state = current_game_state
+    if state._player_finished_round[ai_player_index]:
+        return state
 
-#     action = None
-#     is_fl_placement = state.is_fantasyland_round and state.fantasyland_status[ai_player_index]
+    action = None
+    is_fl_placement = state.is_fantasyland_round and state.fantasyland_status[ai_player_index]
 
-#     try:
-#          # print(f"AI Player {ai_player_index} choosing action...")
-#          action = ai_agent.choose_action(state) # Передаем текущее состояние # <<<<<<<<<< ВЫЗОВ AI
-#          # print(f"AI Player {ai_player_index} chose action: {ai_agent._format_action(action)}")
-#     except Exception as e:
-#          print(f"Error getting action from AI agent: {e}")
-#          traceback.print_exc()
-#          sys.stdout.flush(); sys.stderr.flush()
-#          action = None
+    # Проверяем, что ai_agent инициализирован
+    if ai_agent is None:
+         print(f"FATAL ERROR in run_ai_turn: ai_agent is None!")
+         # Возвращаем состояние с фолом для AI
+         new_state = state.copy()
+         new_state.boards[ai_player_index].is_foul = True
+         new_state._player_finished_round[ai_player_index] = True
+         hand_to_discard = state.get_player_hand(ai_player_index)
+         if hand_to_discard:
+              new_state.private_discard[ai_player_index].extend(hand_to_discard)
+              if is_fl_placement: new_state.fantasyland_hands[ai_player_index] = None
+              else: new_state.current_hands[ai_player_index] = None
+         return new_state
 
-#     new_state = state # По умолчанию
+    try:
+         print(f"AI Player {ai_player_index} choosing action...")
+         sys.stdout.flush(); sys.stderr.flush()
+         action = ai_agent.choose_action(state) # Передаем текущее состояние # <<<<<<<<<< ВЫЗОВ AI
+         print(f"AI Player {ai_player_index} chose action: {ai_agent._format_action(action)}")
+         sys.stdout.flush(); sys.stderr.flush()
+    except Exception as e:
+         print(f"Error getting action from AI agent: {e}")
+         traceback.print_exc()
+         sys.stdout.flush(); sys.stderr.flush()
+         action = None
 
-#     if action is None:
-#         print(f"AI Player {ai_player_index} could not choose an action or errored. Setting foul.")
-#         hand_to_discard = state.get_player_hand(ai_player_index)
-#         if is_fl_placement and hand_to_discard:
-#              new_state = state.apply_fantasyland_foul(ai_player_index, hand_to_discard)
-#         else:
-#              new_state = state.copy()
-#              new_state.boards[ai_player_index].is_foul = True
-#              new_state._player_finished_round[ai_player_index] = True
-#              if hand_to_discard:
-#                   new_state.private_discard[ai_player_index].extend(hand_to_discard)
-#                   new_state.current_hands[ai_player_index] = None
-#         print(f"AI Player {ai_player_index} fouled.")
+    new_state = state # По умолчанию
 
-#     elif isinstance(action, tuple) and action[0] == "FANTASYLAND_PLACEMENT":
-#          _, placement, discarded = action
-#          # print(f"AI applying Fantasyland placement...")
-#          new_state = state.apply_fantasyland_placement(ai_player_index, placement, discarded)
-#     elif isinstance(action, tuple) and action[0] == "FANTASYLAND_FOUL":
-#          _, hand_to_discard = action
-#          print(f"AI FAILED Fantasyland placement! Fouling.")
-#          new_state = state.apply_fantasyland_foul(ai_player_index, hand_to_discard)
-#     else: # Обычный ход AI
-#          # print(f"AI applying regular action...")
-#          new_state = state.apply_action(ai_player_index, action)
+    if action is None:
+        print(f"AI Player {ai_player_index} could not choose an action or errored. Setting foul.")
+        hand_to_discard = state.get_player_hand(ai_player_index)
+        if is_fl_placement and hand_to_discard:
+             new_state = state.apply_fantasyland_foul(ai_player_index, hand_to_discard)
+        else: # Фол в обычном раунде
+             new_state = state.copy()
+             new_state.boards[ai_player_index].is_foul = True
+             new_state._player_finished_round[ai_player_index] = True
+             if hand_to_discard:
+                  new_state.private_discard[ai_player_index].extend(hand_to_discard)
+                  new_state.current_hands[ai_player_index] = None
+        print(f"AI Player {ai_player_index} fouled.")
 
-#     # print(f"AI Player {ai_player_index} action applied.")
-#     sys.stdout.flush(); sys.stderr.flush()
-#     return new_state
+    elif isinstance(action, tuple) and action[0] == "FANTASYLAND_PLACEMENT":
+         _, placement, discarded = action
+         print(f"AI applying Fantasyland placement...")
+         sys.stdout.flush(); sys.stderr.flush()
+         new_state = state.apply_fantasyland_placement(ai_player_index, placement, discarded)
+    elif isinstance(action, tuple) and action[0] == "FANTASYLAND_FOUL":
+         _, hand_to_discard = action
+         print(f"AI FAILED Fantasyland placement! Fouling.")
+         sys.stdout.flush(); sys.stderr.flush()
+         new_state = state.apply_fantasyland_foul(ai_player_index, hand_to_discard)
+    else: # Обычный ход AI
+         print(f"AI applying regular action...")
+         sys.stdout.flush(); sys.stderr.flush()
+         new_state = state.apply_action(ai_player_index, action)
+
+    print(f"AI Player {ai_player_index} action applied.")
+    sys.stdout.flush(); sys.stderr.flush()
+    return new_state
 
 
 @app.route('/move', methods=['POST'])
 def handle_move():
     """Обрабатывает ход человека (после нажатия 'Готов')."""
-    # print("Route /move called")
+    print("Route /move called")
     human_player_idx = 0
     ai_idx = 1 - human_player_idx
     game_state = load_game_state()
@@ -404,7 +426,7 @@ def handle_move():
              for row, card_strs in placement_raw.items():
                   placement_dict[row] = [card_from_str(s) for s in card_strs]
              discarded_cards = [card_from_str(s) for s in discarded_raw]
-             # print("Applying human Fantasyland placement.")
+             print("Applying human Fantasyland placement.")
              new_state = game_state.apply_fantasyland_placement(human_player_idx, placement_dict, discarded_cards)
 
         else: # Обычный ход
@@ -418,7 +440,7 @@ def handle_move():
                   placements = []
                   for p in placements_raw: placements.append((card_from_str(p['card']), p['row'], int(p['index'])))
                   action = (placements, [])
-                  # print("Applying human Street 1 action.")
+                  print("Applying human Street 1 action.")
              else: # Улицы 2-5
                   if len(player_hand) != 3: raise ValueError(f"Неверное количество карт для улицы {game_state.street}.")
                   placements_raw = move_data.get('placements')
@@ -429,7 +451,7 @@ def handle_move():
                   place2 = (card_from_str(place2_raw['card']), place2_raw['row'], int(place2_raw['index']))
                   discarded_card = card_from_str(discard_str)
                   action = (place1, place2, discarded_card)
-                  # print(f"Applying human Pineapple action (Street {game_state.street}).")
+                  print(f"Applying human Pineapple action (Street {game_state.street}).")
 
              if action:
                   new_state = game_state.apply_action(human_player_idx, action)
@@ -437,37 +459,30 @@ def handle_move():
                   raise ValueError("Не удалось сформировать действие для обычного хода.")
 
 
-        # print(f"Human action applied. Human finished: {new_state._player_finished_round[human_player_idx]}")
+        print(f"Human action applied. Human finished: {new_state._player_finished_round[human_player_idx]}")
         sys.stdout.flush(); sys.stderr.flush()
 
         # --- Ход AI (если он еще не закончил) ---
-        # >>>>>>>> ИЗМЕНЕНИЕ: Закомментирован блок хода AI <<<<<<<<<<
-        # ai_made_move = False
-        # if not new_state.is_round_over() and not new_state._player_finished_round[ai_idx]:
-        #      ai_can_act = False
-        #      # ... (логика определения ai_can_act как раньше) ...
-        #      if new_state.is_fantasyland_round and new_state.fantasyland_status[ai_idx]:
-        #           ai_can_act = new_state.fantasyland_hands[ai_idx] is not None
-        #      else:
-        #           ai_can_act = new_state.current_hands.get(ai_idx) is not None
-
-        #      if ai_can_act:
-        #           print(f"AI Player {ai_idx} making move after human...")
-        #           sys.stdout.flush(); sys.stderr.flush()
-        #           new_state = run_ai_turn(new_state, ai_idx) # <<<<<<<<<< ВЫЗОВ AI
-        #           ai_made_move = True
-        #           print(f"AI finished move. AI finished round: {new_state._player_finished_round[ai_idx]}")
-        #           sys.stdout.flush(); sys.stderr.flush()
-
-        # >>>>>>>> ИЗМЕНЕНИЕ: Считаем, что AI всегда заканчивает ход сразу <<<<<<<<<<
+        # >>>>>>>> ИЗМЕНЕНИЕ: Раскомментирован блок хода AI <<<<<<<<<<
+        ai_made_move = False
         if not new_state.is_round_over() and not new_state._player_finished_round[ai_idx]:
-             print(f"AI Player {ai_idx} turn skipped (AI disabled). Marking as finished.")
-             new_state._player_finished_round[ai_idx] = True # Считаем, что AI закончил
-             # Очищаем его возможную руку, если она была
+             ai_can_act = False
+             # Определяем, может ли AI ходить
              if new_state.is_fantasyland_round and new_state.fantasyland_status[ai_idx]:
-                  new_state.fantasyland_hands[ai_idx] = None
+                  ai_can_act = new_state.fantasyland_hands[ai_idx] is not None
+             else: # Обычный ход или не-ФЛ в ФЛ раунде
+                  ai_can_act = new_state.current_hands.get(ai_idx) is not None
+
+             if ai_can_act:
+                  print(f"AI Player {ai_idx} making move after human...")
+                  sys.stdout.flush(); sys.stderr.flush()
+                  new_state = run_ai_turn(new_state, ai_idx) # <<<<<<<<<< ВЫЗОВ AI
+                  ai_made_move = True
+                  print(f"AI finished move. AI finished round: {new_state._player_finished_round[ai_idx]}")
+                  sys.stdout.flush(); sys.stderr.flush()
              else:
-                  new_state.current_hands[ai_idx] = None
+                  print(f"AI Player {ai_idx} cannot act yet (waiting for cards or finished).")
+                  sys.stdout.flush(); sys.stderr.flush()
 
 
         # --- Переход к следующей улице / Раздача карт ---
@@ -517,31 +532,29 @@ def handle_move():
                                     players_to_deal.append(p_idx_deal)
 
                   # Раздаем карты
-                  # >>>>>>>> ИЗМЕНЕНИЕ: Убран блок хода AI после раздачи <<<<<<<<<<
-                  # ai_needs_to_act_after_deal = False
+                  # >>>>>>>> ИЗМЕНЕНИЕ: Раскомментирован блок хода AI после раздачи <<<<<<<<<<
+                  ai_needs_to_act_after_deal = False
                   for p_idx_deal in players_to_deal:
-                       # Раздаем только человеку
-                       if p_idx_deal == human_player_idx:
-                            print(f"Dealing cards to player {p_idx_deal} (Street {new_state.street})")
-                            sys.stdout.flush(); sys.stderr.flush()
-                            new_state._deal_street_to_player(p_idx_deal)
-                       # if p_idx_deal == ai_idx:
-                       #      ai_needs_to_act_after_deal = True
+                       print(f"Dealing cards to player {p_idx_deal} (Street {new_state.street})")
+                       sys.stdout.flush(); sys.stderr.flush()
+                       new_state._deal_street_to_player(p_idx_deal)
+                       if p_idx_deal == ai_idx:
+                            ai_needs_to_act_after_deal = True
 
-                  # # Если раздали AI, он должен сходить
-                  # if ai_needs_to_act_after_deal and not new_state._player_finished_round[ai_idx]:
-                  #      print(f"AI Player {ai_idx} making move after deal...")
-                  #      sys.stdout.flush(); sys.stderr.flush()
-                  #      new_state = run_ai_turn(new_state, ai_idx) # <<<<<<<<<< ВЫЗОВ AI
-                  #      print(f"AI finished move after deal. AI finished round: {new_state._player_finished_round[ai_idx]}")
-                  #      sys.stdout.flush(); sys.stderr.flush()
+                  # Если раздали AI, он должен сходить
+                  if ai_needs_to_act_after_deal and not new_state._player_finished_round[ai_idx]:
+                       print(f"AI Player {ai_idx} making move after deal...")
+                       sys.stdout.flush(); sys.stderr.flush()
+                       new_state = run_ai_turn(new_state, ai_idx) # <<<<<<<<<< ВЫЗОВ AI
+                       print(f"AI finished move after deal. AI finished round: {new_state._player_finished_round[ai_idx]}")
+                       sys.stdout.flush(); sys.stderr.flush()
 
 
         # --- Сохранение и ответ ---
-        # print("Saving state after /move")
+        print("Saving state after /move")
         save_game_state(new_state)
         frontend_state = get_state_for_frontend(new_state, human_player_idx)
-        # print("Returning state after /move")
+        print("Returning state after /move")
         return jsonify(frontend_state)
 
     # Обработка ошибок
