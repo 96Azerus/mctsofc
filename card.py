@@ -58,11 +58,22 @@ class Card(PhevaluatorCard):
              return "InvalidCard"
 
     def __hash__(self):
+        # Используем стандартный __hash__ от phevaluator.Card (основан на int id)
+        # Он должен быть стабильным, если объект Card создан корректно
+        # Добавим проверку на всякий случай
+        if not hasattr(self, '_int_representation'):
+             print(f"Warning: Card object missing _int_representation for hashing: {self!r}")
+             return hash(repr(self)) # Фоллбэк на хеш строки
         return super().__hash__()
 
+
     def __eq__(self, other):
+        # Используем стандартный __eq__ от phevaluator.Card (основан на int id)
         if not isinstance(other, Card):
              return NotImplemented
+        # Добавим проверку атрибутов для надежности сравнения неинициализированных объектов
+        if not hasattr(self, '_int_representation') or not hasattr(other, '_int_representation'):
+             return repr(self) == repr(other) # Сравниваем как строки, если нет int
         return super().__eq__(other)
 
 
@@ -70,20 +81,29 @@ def card_from_str(s: str) -> Card:
     """Создает карту из строки."""
     if not isinstance(s, str) or len(s) != 2:
         raise ValueError(f"Invalid card string format: '{s}'")
+    # Приводим к стандартному виду для phevaluator (e.g., 'Ah', 'Td', '7c')
     rank_char = s[0].upper()
     suit_char = s[1].lower()
     standard_str = rank_char + suit_char
+
+    # Проверяем корректность ранга и масти перед созданием
+    # Используем T, J, Q, K, A как есть для RANK_ORDER_MAP
     rank_lookup = rank_char
     if rank_lookup not in Card.RANK_ORDER_MAP or suit_char not in Card.SUIT_ORDER_MAP:
          raise ValueError(f"Invalid rank or suit in card string: '{s}'")
+
     try:
+        # phevaluator ожидает строку типа 'Ah', 'Td', '7c'
         return Card(standard_str)
     except Exception as e:
+        # Ловим возможные ошибки при создании Card из phevaluator
         raise ValueError(f"Failed to create Card from string '{s}': {e}")
 
 
 def card_to_str(c: Optional[Card]) -> str:
     """Конвертирует карту в строку или '__' если None."""
+    # Используем __str__ нашего класса Card, который включает проверки
     return str(c) if c else "__"
 
+# Переименовываем импортированную функцию для ясности
 evaluate_hand = evaluate_cards_phevaluator
