@@ -433,8 +433,13 @@ class GameState:
              if hand_strs:
                   hand = []
                   for cs in hand_strs:
+                       # --- ИЗМЕНЕНИЕ: Игнорируем 'InvalidCard' при загрузке ---
+                       if cs == 'InvalidCard':
+                            print(f"Warning: Ignoring 'InvalidCard' string in saved current hand for player {idx}.")
+                            continue # Пропускаем эту "карту"
+                       # ----------------------------------------------------
                        try: hand.append(card_from_str(cs)); all_known_cards_strs.add(cs)
-                       except ValueError: print(f"Warning: Invalid card string '{cs}' in saved current hand.") # <<< ЭТО ПРЕДУПРЕЖДЕНИЕ МЫ ВИДЕЛИ
+                       except ValueError: print(f"Warning: Invalid card string '{cs}' in saved current hand.")
                   current_hands[idx] = hand
              else: current_hands[idx] = None
         for i in range(cls.NUM_PLAYERS):
@@ -445,6 +450,11 @@ class GameState:
             if hand_strs:
                 hand = []
                 for cs in hand_strs:
+                     # --- ИЗМЕНЕНИЕ: Игнорируем 'InvalidCard' при загрузке ---
+                     if cs == 'InvalidCard':
+                          print(f"Warning: Ignoring 'InvalidCard' string in saved fantasyland hand.")
+                          continue # Пропускаем эту "карту"
+                     # ----------------------------------------------------
                      try: hand.append(card_from_str(cs)); all_known_cards_strs.add(cs)
                      except ValueError: print(f"Warning: Invalid card string '{cs}' in saved fantasyland hand.")
                 fantasyland_hands.append(hand)
