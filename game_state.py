@@ -13,7 +13,7 @@ from typing import List, Tuple, Optional, Set, Dict, Any
 from card import Card, card_to_str, card_from_str
 from deck import Deck
 from board import PlayerBoard
-from scoring import calculate_headsup_score
+from scoring import calculate_headsup_score # Функция подсчета очков
 
 class GameState:
     NUM_PLAYERS = 2
@@ -81,11 +81,10 @@ class GameState:
         num_cards = 5 if self.street == 1 else 3
         try:
             dealt_cards = self.deck.deal(num_cards)
-            # --- ДОБАВЛЕНО ЛОГИРОВАНИЕ ---
-            # Используем repr(c) чтобы увидеть детали объекта Card, если __str__ сломан
+            # --- ЛОГИРОВАНИЕ ---
             print(f"DEBUG: Dealt street cards for player {player_idx}, street {self.street}: {[repr(c) for c in dealt_cards]}")
             sys.stdout.flush(); sys.stderr.flush()
-            # -----------------------------
+            # --------------------
             self.current_hands[player_idx] = dealt_cards
             self._player_acted_this_street[player_idx] = False
         except ValueError as e:
@@ -100,11 +99,10 @@ class GameState:
                 if num_cards == 0: num_cards = 14
                 try:
                     dealt_cards = self.deck.deal(num_cards)
-                    # --- ДОБАВЛЕНО ЛОГИРОВАНИЕ ---
-                    # Используем repr(c)
+                    # --- ЛОГИРОВАНИЕ ---
                     print(f"DEBUG: Dealt fantasyland hand for player {i} ({num_cards} cards): {[repr(c) for c in dealt_cards]}")
                     sys.stdout.flush(); sys.stderr.flush()
-                    # -----------------------------
+                    # --------------------
                     self.fantasyland_hands[i] = dealt_cards
                 except ValueError as e:
                     print(f"Error dealing Fantasyland to player {i}: {e}")
@@ -191,16 +189,26 @@ class GameState:
             new_state.current_hands[player_idx] = None
             new_state._player_acted_this_street[player_idx] = True
             if board.is_complete(): new_state._player_finished_round[player_idx] = True; new_state._check_foul_and_update_fl_status(player_idx)
-        else:
+        else: # Улицы 2-5 (Pineapple)
             if len(current_hand) != 3: return self
             place1, place2, discarded_card = action
             card1, row1, idx1 = place1
             card2, row2, idx2 = place2
             action_cards = {card1, card2, discarded_card}
             if len(action_cards) != 3 or not action_cards.issubset(set(current_hand)): print(f"Error: Action cards mismatch hand for player {player_idx}."); return self
+
             success1 = board.add_card(card1, row1, idx1)
             success2 = board.add_card(card2, row2, idx2)
-            if not success1 or not success2: print(f"Error applying pineapple action for player {player_idx}: failed to add cards."); if success1 and not success2: board.remove_card(row1, idx1); return self
+
+            # --- ИСПРАВЛЕННЫЙ БЛОК ОБРАБОТКИ ОШИБКИ ---
+            if not success1 or not success2:
+                print(f"Error applying pineapple action for player {player_idx}: failed to add cards.")
+                # Откатываем первое добавление, если оно было успешным, а второе нет
+                if success1 and not success2:
+                    board.remove_card(row1, idx1) # Откатываем только если первая карта была добавлена
+                return self # Возвращаем старое состояние при любой ошибке добавления
+            # ------------------------------------------
+
             new_state.private_discard[player_idx].append(discarded_card)
             new_state.current_hands[player_idx] = None
             new_state._player_acted_this_street[player_idx] = True
@@ -293,12 +301,11 @@ class GameState:
             board_data['_is_complete'] = board._is_complete
             boards_dict.append(board_data)
 
-        # --- ДОБАВЛЕНО ЛОГИРОВАНИЕ ---
-        # Используем repr для объектов Card, чтобы увидеть их внутреннее состояние
+        # --- ЛОГИРОВАНИЕ ---
         print(f"DEBUG to_dict: current_hands before str conversion: { {idx: [repr(c) for c in hand] if hand else None for idx, hand in self.current_hands.items()} }")
         print(f"DEBUG to_dict: fantasyland_hands before str conversion: { [[repr(c) for c in hand] if hand else None for hand in self.fantasyland_hands] }")
         sys.stdout.flush(); sys.stderr.flush()
-        # -----------------------------
+        # --------------------
 
         return {
             "boards": boards_dict,
