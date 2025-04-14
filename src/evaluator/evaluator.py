@@ -1,6 +1,6 @@
 import itertools
 from .card import Card
-from .lookup import LookupTable
+from .ofc_5card_lookup import LookupTable
 
 class Evaluator(object):
     """
